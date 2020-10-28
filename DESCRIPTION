@@ -22,4 +22,7 @@ Imports:
     tidyr,
     R.utils,
     purrr,
-    data.table
+    data.table,
+    grDevices,
+    RColorBrewer,
+    ggplot2
