@@ -168,3 +168,15 @@ export_meta_markers_by_cell_type = function(
                                 fc_threshold, detection_threshold, gzip)
     }
 }
+
+#' Import meta-marker statistics.
+#'
+#' @param filename File name.
+#' @param header_size Size of header (# rows) containing meta-information such
+#' as time stamp and list of dataset names (for compatibility purposes only).
+#'
+#' @export
+read_meta_markers = function(filename, header_size=1) {
+    result = data.table::fread(filename, header=TRUE, skip=header_size)
+    return(tibble::as_tibble(result))
+}
