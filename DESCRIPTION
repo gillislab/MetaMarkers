@@ -1,0 +1,25 @@
+Package: MetaMarkers
+Title: Extract robust markers from multiple datasets
+Version: 0.0.0.9000
+Authors@R: 
+    person("Stephan", "Fischer", role = c("aut", "cre"),
+           email = "stephan.fischer.fr@gmail.com")
+Description: What the package does (one paragraph).
+License: MIT + file LICENSE
+Encoding: UTF-8
+LazyData: true
+Roxygen: list(markdown = TRUE)
+RoxygenNote: 7.1.1
+Imports: 
+    Matrix,
+    matrixStats,
+    stats,
+    utils,
+    methods,
+    dplyr,
+    tibble,
+    rlang,
+    tidyr,
+    R.utils,
+    purrr,
+    data.table
