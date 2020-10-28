@@ -117,7 +117,7 @@ export_meta_markers = function(meta_markers, filename, dataset_names,
     write_meta_header(filename, order_by, fdr_threshold, fc_threshold,
                       detection_threshold, dataset_names)
     meta_markers %>%
-        dplyr::mutate_if(is.double, round, 2) %>%
+#        dplyr::mutate_if(is.double, round, 2) %>%
         data.table::fwrite(filename, append=TRUE, row.names=FALSE, col.names=TRUE)
     if (gzip) {
         R.utils::gzip(filename, overwrite=TRUE)
