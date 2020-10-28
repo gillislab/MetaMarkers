@@ -1,4 +1,19 @@
 
+#' Plot best markers in the (fold change of detection, AUROC) space.
+#'
+#' This visualization displays markers meeting minimal threshold conditions
+#' in the (fold change of detection, AUROC) space. The best markers
+#' (Pareto front) are highlighted and labeled.
+#'
+#' @param meta_markers Meta-marker table obtained with `make_meta_marker`.
+#' @param cell_type_name Name of cell type to be plotted (must be contained
+#' in meta-markers).
+#' @param min_recurrence Recurrence threshold for a marker to be plotted
+#' (# of datasets where marker was DE) 
+#' @param min_auroc AUROC threshold for a marker to be plotted.
+#' @param min_fc Fold change of detection threshold for a marker to be plotted.
+#'
+#' @export
 plot_pareto_markers = function(meta_markers, cell_type_name, min_recurrence = 1,
                                min_auroc = 0.5, min_fc = 0) {
     max_recurrence = max(meta_markers$recurrence)
@@ -31,6 +46,7 @@ plot_pareto_markers = function(meta_markers, cell_type_name, min_recurrence = 1,
         ggplot2::scale_color_manual(values = my_palette)
 }
 
+# Find points that are on the Pareto front wrt x and y
 is_pareto_front = function(x, y, tolerance = 0) {
     ids = seq_along(x)
     result = data.frame(x, y, ids) %>%
@@ -42,6 +58,11 @@ is_pareto_front = function(x, y, tolerance = 0) {
     return(result)
 }
 
+#' Plot Pareto fronts (best markers) of all cell types in the (fold change of detection, AUROC) space.
+#'
+#' @param meta_markers Meta-marker table obtained with `make_meta_marker`.
+#'
+#' @export
 plot_pareto_summary = function(meta_markers) {
     meta_markers %>%
         dplyr::group_by(.data$cell_type) %>%
@@ -58,6 +79,13 @@ plot_pareto_summary = function(meta_markers) {
         ggplot2::theme(legend.title = ggplot2::element_blank())
 }
 
+#' Get Pareto front markers (best markers) of given cell type in the (fold change of detection, AUROC) space.
+#'
+#' @param meta_markers Meta-marker table obtained with `make_meta_marker`.
+#' @param cell_type_name Name of cell type to be plotted (must be contained
+#' in meta-markers).
+#'
+#' @export
 get_pareto_markers = function(meta_markers, cell_type_name) {
     meta_markers %>%
         dplyr::filter(.data$cell_type == cell_type_name) %>%
