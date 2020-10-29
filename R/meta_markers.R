@@ -13,6 +13,9 @@
 #' alternatively output additional statistics, such as average AUROC, FC, etc.
 #' @param common_genes_only Boolean. Keep only genes that are common to all
 #' datasets?
+#' @param check_duplicates Boolean. Check and remove duplicated gene names? In
+#' theory, this step was already performed in `compute_markers` and does not
+#' need to be performed again (time consuming).
 #'
 #' @return A tibble containing ranked meta-markers and (if desired) average DE
 #' statistics for each cell type. Within each cell type, meta-markers are
@@ -24,8 +27,11 @@ make_meta_markers = function(marker_lists, order_by = "auroc",
                              fdr_threshold = 0.05, fc_threshold = 4,
                              detection_threshold = 0,
                              detailed_stats=FALSE,
-                             common_genes_only=TRUE) {
-    marker_lists = lapply(marker_lists, remove_duplicated_genes)
+                             common_genes_only=TRUE,
+                             check_duplicates=FALSE) {
+    if (check_duplicates) {
+        marker_lists = lapply(marker_lists, remove_duplicated_genes)
+    }
     
     all_markers = dplyr::bind_rows(marker_lists, .id = "dataset")
     if (common_genes_only) {
@@ -79,17 +85,6 @@ find_common_genes = function(marker_lists) {
         unique(marker_stats$gene)
     })
     return(Reduce(intersect, genes))
-}
-
-# Remove duplicate gene from a marker table (individual dataset)
-remove_duplicated_genes = function(marker_stats) {
-    duplicated_genes = marker_stats %>%
-        dplyr::group_by(.data$group, .data$cell_type, .data$gene) %>%
-        dplyr::tally() %>%
-        dplyr::filter(.data$n > 1) %>%
-        dplyr::pull(.data$gene) %>%
-        unique()
-    return(dplyr::filter(marker_stats, !(.data$gene %in% duplicated_genes)))
 }
 
 # Geometric mean

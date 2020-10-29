@@ -15,7 +15,8 @@
 #' as rows (as in SingleCellExperiment or Seurat objects)?
 #'
 #' @return A tibble containing basic differential expression statistics for
-#' all cell types and genes. All statistics are 1-vs-rest within groups.
+#' all cell types and genes. All statistics are 1-vs-rest within groups. Note
+#' genes with duplicate names will be removed.
 #'
 #' @export
 #' @importFrom rlang .data
@@ -81,7 +82,9 @@ compute_markers_ = function(expression, cell_type_labels, two_tailed = FALSE,
     binary_recall = n_expressing_cells / population_size
 
     result = tidy_stat(fold_change, "fold_change")
-    full_indices = as.matrix(result[,c("cell_type", "gene")])
+    # WARNING: the indexing technique is efficient, but only works if
+    # gene names are unique!!!
+    full_indices = as.matrix(result[, c("cell_type", "gene")])
     result = result %>% dplyr::mutate(
         auroc = aurocs$aurocs[full_indices],
         log_fdr = log_fdr[full_indices],
@@ -95,6 +98,13 @@ compute_markers_ = function(expression, cell_type_labels, two_tailed = FALSE,
         recall = binary_recall[full_indices]
     ) %>%
         dplyr::arrange(.data$cell_type, dplyr::desc(.data$auroc))
+    
+    # remove duplicate genes (see WARNING above)
+    # NOTE: more efficient to do it now than in the original matrix
+    genes = colnames(expression)
+    duplicated_genes = unique(genes[duplicated(genes)])
+    result = dplyr::filter(result, !(.data$gene %in% duplicated_genes))
+
     return(result)
 }
 
@@ -156,22 +166,46 @@ compute_markers_blockwise = function(expression, cell_type_labels,
     })
     result = dplyr::bind_rows(result) %>%
         dplyr::arrange(.data$cell_type, .data$gene)
+
+    # remove duplicate genes (see WARNING in compute_markers_)
+    # NOTE: more efficient to do it now than in the original matrix
+    genes = colnames(expression)
+    duplicated_genes = unique(genes[duplicated(genes)])
+    result = dplyr::filter(result, !(.data$gene %in% duplicated_genes))
     return(result)
 }
+
+#' Remove duplicate gene from a marker table (individual dataset)
+#'
+#' @param marker_stats Tibble obtained by calling `compute_marker_stats`.
+#' 
+#' @return Tibble with marker stats, all duplicated genes being removed.
+#'
+#' @export
+remove_duplicated_genes = function(marker_stats) {
+    duplicated_genes = marker_stats %>%
+        dplyr::group_by(.data$group, .data$cell_type, .data$gene) %>%
+        dplyr::tally() %>%
+        dplyr::filter(.data$n > 1) %>%
+        dplyr::pull(.data$gene) %>%
+        unique()
+    return(dplyr::filter(marker_stats, !(.data$gene %in% duplicated_genes)))
+}
+
 
 #' Export marker statistics to file.
 #'
 #' This function will export marker statistics in a simple format, including a short
 #' summary header with cell types analyzed and date of export.
 #'
-#' @param de_stats Tibble obtained by calling `compute_de_stats`.
+#' @param marker_stats Tibble obtained by calling `compute_marker_stats`.
 #' @param filename File name.
 #' @param gzip Boolean. Should output file be zipped to spare memory?
 #'
 #' @export
-export_markers = function(de_stats, filename, gzip=TRUE) {
-    write_header(unique(de_stats$cell_type), filename)
-    data.table::fwrite(de_stats, filename, append=TRUE,
+export_markers = function(marker_stats, filename, gzip=TRUE) {
+    write_header(unique(marker_stats$cell_type), filename)
+    data.table::fwrite(marker_stats, filename, append=TRUE,
                        row.names=FALSE, col.names=TRUE)
     if (gzip) {
         R.utils::gzip(filename, overwrite=TRUE)

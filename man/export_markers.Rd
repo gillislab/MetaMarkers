@@ -4,10 +4,10 @@
 \alias{export_markers}
 \title{Export marker statistics to file.}
 \usage{
-export_markers(de_stats, filename, gzip = TRUE)
+export_markers(marker_stats, filename, gzip = TRUE)
 }
 \arguments{
-\item{de_stats}{Tibble obtained by calling \code{compute_de_stats}.}
+\item{marker_stats}{Tibble obtained by calling \code{compute_marker_stats}.}
 
 \item{filename}{File name.}
 

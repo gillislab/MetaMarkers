@@ -11,7 +11,8 @@ make_meta_markers(
   fc_threshold = 4,
   detection_threshold = 0,
   detailed_stats = FALSE,
-  common_genes_only = TRUE
+  common_genes_only = TRUE,
+  check_duplicates = FALSE
 )
 }
 \arguments{
@@ -33,6 +34,10 @@ alternatively output additional statistics, such as average AUROC, FC, etc.}
 
 \item{common_genes_only}{Boolean. Keep only genes that are common to all
 datasets?}
+
+\item{check_duplicates}{Boolean. Check and remove duplicated gene names? In
+theory, this step was already performed in \code{compute_markers} and does not
+need to be performed again (time consuming).}
 }
 \value{
 A tibble containing ranked meta-markers and (if desired) average DE
