@@ -23,6 +23,7 @@
 #' statistics, as specified in "order_by" (AUROC by default).
 #'
 #' @export
+#' @importFrom data.table .N
 make_meta_markers = function(marker_lists, order_by = "auroc",
                              fdr_threshold = 0.05, fc_threshold = 4,
                              detection_threshold = 0,
@@ -45,24 +46,29 @@ make_meta_markers = function(marker_lists, order_by = "auroc",
                       .data$fold_change >= fc_threshold,
                       .data$detection_rate >= detection_threshold)
     
-    result = all_markers %>%
-        dplyr::group_by(.data$group, .data$cell_type, .data$gene) %>%
-        dplyr::summarize(recurrence = sum(.data$is_de),
-                         auroc = mean(.data$auroc),
-                         fold_change = gmean(.data$fold_change),
-                         fold_change_detection = gmean(.data$fold_change_detection),
-                         expression = gmean(.data$average_expression),
-                         precision = mean(.data$precision),
-                         recall = mean(.data$detection_rate),
-                         population_size = mean(.data$population_size),
-                         n_datasets = dplyr::n()) %>%
-        dplyr::ungroup() %>%
+    # declare variables for compatibility with R CMD check
+    is_de = auroc = fold_change = fold_change_detection = NULL
+    average_expression = precision = detection_rate = population_size = NULL
+    group = cell_type = gene = NULL
+    result = data.table::as.data.table(all_markers)[, list(
+        recurrence = sum(is_de),
+        auroc = mean(auroc),
+        fold_change = gmean(fold_change),
+        fold_change_detection = gmean(fold_change_detection),
+        expression = gmean(average_expression),
+        precision = mean(precision),
+        recall = mean(detection_rate),
+        population_size = mean(population_size),
+        n_datasets = .N
+    ), by=list(group, cell_type, gene)]
+    
+    result = tibble::as_tibble(result) %>%
         dplyr::group_by(.data$group, .data$cell_type) %>%
         dplyr::arrange_at(c("recurrence", order_by), dplyr::desc, .by_group=TRUE) %>%
         dplyr::mutate(rank = 1:dplyr::n()) %>%
         dplyr::select(.data$group, .data$cell_type, .data$rank, dplyr::everything()) %>%
         dplyr::ungroup()
-
+    
     if (detailed_stats) {
         recurrence_table = all_markers %>%
             dplyr::select(.data$group, .data$cell_type, .data$gene,
