@@ -4,13 +4,16 @@
 \alias{get_pareto_markers}
 \title{Get Pareto front markers (best markers) of given cell type in the (fold change of detection, AUROC) space.}
 \usage{
-get_pareto_markers(meta_markers, cell_type_name)
+get_pareto_markers(meta_markers, cell_type_name, min_recurrence = 1)
 }
 \arguments{
 \item{meta_markers}{Meta-marker table obtained with \code{make_meta_marker}.}
 
 \item{cell_type_name}{Name of cell type to be plotted (must be contained
 in meta-markers).}
+
+\item{min_recurrence}{Recurrence threshold for a marker to be considered
+(# of datasets where marker was DE)}
 }
 \description{
 Get Pareto front markers (best markers) of given cell type in the (fold change of detection, AUROC) space.

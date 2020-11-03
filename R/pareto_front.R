@@ -17,7 +17,7 @@
 plot_pareto_markers = function(meta_markers, cell_type_name, min_recurrence = 1,
                                min_auroc = 0.5, min_fc = 0) {
     max_recurrence = max(meta_markers$recurrence)
-    my_blue = RColorBrewer::brewer.pal(n = 9, "Blues")[c(3,9)]
+    my_blue = RColorBrewer::brewer.pal(n = 9, "Blues")[c(3,8)]
     my_palette = c(grDevices::colorRampPalette(my_blue)(max_recurrence-min_recurrence), "black")
     names(my_palette) = min_recurrence:max_recurrence
     
@@ -61,10 +61,13 @@ is_pareto_front = function(x, y, tolerance = 0) {
 #' Plot Pareto fronts (best markers) of all cell types in the (fold change of detection, AUROC) space.
 #'
 #' @param meta_markers Meta-marker table obtained with `make_meta_marker`.
+#' @param min_recurrence Recurrence threshold for a marker to be plotted
+#' (# of datasets where marker was DE) 
 #'
 #' @export
-plot_pareto_summary = function(meta_markers) {
+plot_pareto_summary = function(meta_markers, min_recurrence=1) {
     meta_markers %>%
+        dplyr::filter(.data$recurrence >= min_recurrence) %>%
         dplyr::group_by(.data$cell_type) %>%
         dplyr::filter(is_pareto_front(.data$auroc, .data$fold_change_detection)) %>%
         ggplot2::ggplot(ggplot2::aes(x = log2(.data$fold_change_detection),
@@ -84,13 +87,44 @@ plot_pareto_summary = function(meta_markers) {
 #' @param meta_markers Meta-marker table obtained with `make_meta_marker`.
 #' @param cell_type_name Name of cell type to be plotted (must be contained
 #' in meta-markers).
+#' @param min_recurrence Recurrence threshold for a marker to be considered
+#' (# of datasets where marker was DE) 
 #'
 #' @export
-get_pareto_markers = function(meta_markers, cell_type_name) {
+get_pareto_markers = function(meta_markers, cell_type_name, min_recurrence=1) {
     meta_markers %>%
+        dplyr::filter(.data$recurrence >= min_recurrence) %>%
         dplyr::filter(.data$cell_type == cell_type_name) %>%
         dplyr::filter(is_pareto_front(.data$auroc, .data$fold_change_detection)) %>%
         dplyr::arrange(.data$fold_change_detection) %>%
         dplyr::pull(.data$gene)
 }
 
+#' Plot expression of markers in cell type as violin plots.
+#'
+#' @param expression_matrix Expression matrix (with genes as rows) in sparse or
+#' dense format.
+#' @param genes Vector of gene names.
+#' @param cell_type_label Vector of cell type names (must be same length as
+#' number of columns in expression_matrix)
+#' @return ggplot2 object
+#'
+#' @export
+plot_marker_expression = function(expression_matrix, genes, cell_type_label) {
+    expr = Matrix::t(expression_matrix[genes,]) %>%
+        as.matrix() %>%
+        tibble::as_tibble() %>%
+        cbind(label = cell_type_label) %>%
+        tidyr::pivot_longer(cols = dplyr::all_of(genes), names_to = "gene", values_to = "cpm") %>%
+        dplyr::mutate(gene = factor(.data$gene, levels = genes))
+
+    result = expr %>%
+        ggplot2::ggplot(ggplot2::aes(x = .data$label, y = .data$cpm+1, fill = .data$label)) +
+        ggplot2::geom_violin(scale = "width") +
+        ggplot2::scale_y_log10() +
+        ggplot2::facet_grid(gene ~ .) +
+        ggplot2::guides(fill = FALSE) +
+        ggplot2::theme(axis.text.x = ggplot2::element_text(angle = 45, hjust = 1)) +
+        ggplot2::labs(y = "Gene expression", x = "Cell type")
+    return(result)
+}

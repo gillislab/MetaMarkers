@@ -1,6 +1,6 @@
 Package: MetaMarkers
 Title: Extract robust markers from multiple datasets
-Version: 0.0.0.9000
+Version: 0.0.1
 Authors@R: 
     person("Stephan", "Fischer", role = c("aut", "cre"),
            email = "stephan.fischer.fr@gmail.com")
@@ -26,3 +26,8 @@ Imports:
     grDevices,
     RColorBrewer,
     ggplot2
+Suggests: 
+    knitr,
+    rmarkdown,
+    scRNAseq
+VignetteBuilder: knitr
