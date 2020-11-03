@@ -38,7 +38,7 @@ plot_pareto_markers = function(meta_markers, cell_type_name, min_recurrence = 1,
         ggplot2::geom_line(data = dplyr::filter(filtered_markers, .data$is_pareto)) +
         ggplot2::geom_label(data = dplyr::filter(filtered_markers, .data$is_pareto),
                             ggplot2::aes(col = .data$recurrence),
-                            show.legend = FALSE, size = 8) +
+                            show.legend = FALSE) +
         ggplot2::geom_hline(yintercept = 0.8, linetype = "dashed") +
         ggplot2::geom_vline(xintercept = 3, linetype = "dashed") +
         ggplot2::labs(x = "log2(Fold change) of detection rate", y = "AUROC",
@@ -75,7 +75,7 @@ plot_pareto_summary = function(meta_markers, min_recurrence=1) {
                                      col = .data$cell_type,
                                      label = .data$gene)) +
         ggplot2::geom_line() +
-        ggplot2::geom_label(show.legend=FALSE, size=6) +
+        ggplot2::geom_label(show.legend=FALSE) +
         ggplot2::geom_hline(yintercept = 0.8, linetype = "dashed") +
         ggplot2::geom_vline(xintercept = 3, linetype = "dashed") +
         ggplot2::labs(x = "log2(Fold change) of detection rate", y = "AUROC") +
