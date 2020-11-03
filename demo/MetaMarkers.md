@@ -1,0 +1,452 @@
+---
+title: "MetaMarkers: robust marker signatures from single-cell data"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{MetaMarkers: robust marker signatures from single-cell data}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+
+
+# Introduction
+
+Single-cell RNA-sequencing technologies have enabled the discovery and characterization of an incredible number of novel cell types and batches. However, cell types are usually measured in only one biological condition and subject to technical variability, making it difficult to identify robust markers, particularly for rare populations. MetaMarkers proposed a simple methodology to pool marker information across dataset while keeping dataset independents, identifying robust marker signatures and 
+
+Here are some of the reasons why you may want to use MetaMarkers:
+ - the pipeline is fast and easy to use, making it possible to aggregate a large number of datasets.
+ - the more datasets you provide, the more technical and biological variability you sample, progressively increasing marker robustness.
+ - MetaMarkers creates marker signatures that offer redundant information about cell types. For example, these robust signatures enable rapid cell type identification at the individual cell level, even if the main markers have not been measured in a particular cell due to dropout.
+ - MetaMarkers offers the possibility to stratify marker selection by grouping cell types into broader classes, enabling combinatorial identification of cell types.
+ 
+What is required from the user’s perspective are:
+ - a list of annotated datasets.
+ - matching cell type names across datasets.
+ 
+To obtain matching annotation across datasets in an automated way, we suggest using Seurat to perform integrative clustering or MetaNeighbor to match highly replicable cell types.
+
+In this vignette, we illustrate how to create meta-marker lists by using standards pancreas datasets. We show how to create meta-marker lists, visualize and pick the best meta-markers. We then show how to create hierarchical lists by grouping cell types into endocrine and non-endocrine classes.
+
+# Installation
+
+To install the latest MetaMarkers version, run the following code in an R session.
+
+
+```r
+if (!requireNamespace("devtools", quietly = TRUE)) {
+    install.packages("devtools")
+}
+#devtools::install_github("gillislab/MetaMarkers")
+```
+
+The following packages are required to run the vignette.
+
+
+```r
+if (!requireNamespace("BiocManager", quietly = TRUE)) {
+    install.packages("BiocManager")
+    BiocManager::install()
+}
+BiocManager::install("scRNAseq")
+#> Update all/some/none? [a/s/n]: Update all/some/none? [a/s/n]: Update all/some/none? [a/s/n]:
+```
+
+To avoid conflicts related to the installation process, we strongly recommend restarting your R session before proceeding to the rest of the vignette.
+
+
+# Create marker lists for individual pancreas datasets
+
+We start by loading the packages needed for our analysis: MetaMarkers, scRNAseq (package used to access datasets) and dplyr (data manipulation, part of the tidyverse).
+
+
+```r
+library(MetaMarkers)
+library(scRNAseq)
+library(dplyr)
+```
+
+We will compute meta-marker lists for pancreatic cell types. For simplicity, we only consider 2 datasets here, but the analysis can easily be extended to include even more datasets. After loading the datasets (in the SingleCellExperiment format), we need to make sure that gene names are identical across datasets. Here, the Baron dataset uses gene symbols, while the Muraro dataset uses names that combine gene symbols and chromosome locations (to avoid duplicate names). We change gene names to gene symbols, which are contained in the "rowData" slot of the Muraro dataset. Note that MetaMarkers will automatically remove duplicate gene names, so we don’t need to worry.
+
+
+```r
+dataset1 = scRNAseq::BaronPancreasData()
+dataset2 = scRNAseq::MuraroPancreasData()
+rownames(dataset2) = rowData(dataset2)$symbol
+```
+
+Next we need to match cell type names across datasets. Cell types are contained in the "label" column of the datasets (part of the colData slot, but can be accessed directly as shown here).
+
+
+```r
+table(dataset1$label)
+#> 
+#>             acinar activated_stellate              alpha               beta 
+#>                958                284               2326               2525 
+#>              delta             ductal        endothelial            epsilon 
+#>                601               1077                252                 18 
+#>              gamma         macrophage               mast quiescent_stellate 
+#>                255                 55                 25                173 
+#>            schwann             t_cell 
+#>                 13                  7
+table(dataset2$label)
+#> 
+#>      acinar       alpha        beta       delta        duct endothelial 
+#>         219         812         448         193         245          21 
+#>     epsilon mesenchymal          pp     unclear 
+#>           3          80         101           4
+```
+
+Some cell types are only present in one dataset, but there is a good overlap for the main cell types. We update names of cell types that overlap but have different names.
+
+
+```r
+new_label = dataset1$label
+new_label[new_label=="activated_stellate"] = "mesenchymal"
+new_label[new_label=="quiescent_stellate"] = "mesenchymal"
+dataset1$new_label = new_label
+
+new_label = dataset2$label
+new_label[new_label=="duct"] = "ductal"
+new_label[new_label=="pp"] = "gamma"
+dataset2$new_label = new_label
+
+common_labels = intersect(unique(dataset1$new_label), unique(dataset2$new_label))
+common_labels
+#> [1] "acinar"      "beta"        "delta"       "mesenchymal" "ductal"     
+#> [6] "alpha"       "epsilon"     "gamma"       "endothelial"
+```
+
+We only keep cell types that are common to both datasets. Note that this step is not strictly necessary: if we kept cell types present in only one dataset, the pipeline would run normally but the "meta-markers" for these cell types would be based on a single dataset.
+
+
+```r
+dataset1 = dataset1[, dataset1$new_label %in% common_labels]
+dataset2 = dataset2[, dataset2$new_label %in% common_labels]
+```
+The last step before computing markers is data normalization. The only requirement here is that the normalization is uniform across datasets for the meta-analytic stats to be meaningful. Any normalization procedure may be used, the MetaMarkers package offer a simple library size normalization procedure:
+
+
+```r
+assay(dataset1, "cpm") = convert_to_cpm(assay(dataset1))
+assay(dataset2, "cpm") = convert_to_cpm(assay(dataset2))
+```
+We can now proceed to marker selection (based on the ROC test). In our experience, it is best to *not* use logarithmic scaling as it will provide better fold change evaluation.
+
+
+```r
+markers_dataset1 = compute_markers(assay(dataset1, "cpm"), dataset1$new_label)
+markers_dataset2 = compute_markers(assay(dataset2, "cpm"), dataset2$new_label)
+```
+
+These functions provide marker lists for all cell types in a given dataset (ranked by AUROC). For example, we can visualize the best markers for the beta cell type, responsible for insulin secretion:
+
+
+```r
+markers_dataset1 %>%
+    filter(cell_type == "beta") %>%
+    head
+#> # A tibble: 6 x 14
+#>   group cell_type gene  fold_change auroc log_fdr population_size
+#>   <chr> <chr>     <chr>       <dbl> <dbl>   <dbl>           <dbl>
+#> 1 all   beta      INS         63.2  0.993  -2582.            2525
+#> 2 all   beta      IAPP        67.0  0.953  -2177.            2525
+#> 3 all   beta      HADH        13.4  0.894  -1644.            2525
+#> 4 all   beta      ADCY…       57.0  0.873  -1471.            2525
+#> 5 all   beta      PCSK1        5.14 0.834  -1183.            2525
+#> 6 all   beta      UCHL1        3.73 0.832  -1170.            2525
+#> # … with 7 more variables: population_fraction <dbl>, average_expression <dbl>,
+#> #   se_expression <dbl>, detection_rate <dbl>, fold_change_detection <dbl>,
+#> #   precision <dbl>, recall <dbl>
+```
+
+Individual dataset markers can be saved to file for later use, which is particularly useful to accumulate datasets over time and regenerate more comprehensive meta-marker lists. 
+
+
+```r
+export_markers(markers_dataset1, "baron.csv")
+export_markers(markers_dataset2, "muraro.csv")
+```
+
+# Build list of meta-analytic markers
+
+We now build meta-markers from invidual datasets marker lists. First we load the markers we previously exported. Note that the export function compresses marker files by default, so the extension has changed.
+
+
+```r
+markers = list(
+    baron = read_markers("baron.csv.gz"),
+    muraro = read_markers("muraro.csv.gz")
+)
+```
+
+We create meta-markers by calling the following function. By default, the function only returns a ranked list of markers, but can also provide more detailed information about markers by setting "detailed_stats = TRUE".
+
+
+```r
+meta_markers = make_meta_markers(markers, detailed_stats = TRUE)
+```
+
+We can look at meta-analytic markers for the beta cell type again.
+
+
+```r
+meta_markers %>%
+    filter(cell_type == "beta") %>%
+    head
+#> # A tibble: 6 x 15
+#>   group cell_type  rank gene  recurrence auroc fold_change fold_change_det…
+#>   <chr> <chr>     <int> <chr>      <int> <dbl>       <dbl>            <dbl>
+#> 1 all   beta          1 INS            2 0.983       60.4              1.49
+#> 2 all   beta          2 IAPP           2 0.937       50.3              1.68
+#> 3 all   beta          3 HADH           2 0.919       10.5              2.89
+#> 4 all   beta          4 ADCY…          2 0.899       47.2             14.2 
+#> 5 all   beta          5 MAFA           2 0.842       56.4             15.8 
+#> 6 all   beta          6 SYT13          2 0.830        8.18             3.22
+#> # … with 7 more variables: expression <dbl>, precision <dbl>, recall <dbl>,
+#> #   population_size <dbl>, n_datasets <int>, baron <lgl>, muraro <lgl>
+```
+
+Without surprise, insulin remains the top marker. The "recurrence" column shows how often (in how many datasets) a gene was detected as "strongly" differentially expressed (by default FC>4, FDR<0.05, these parameters can be changed when calling "make_meta_markers"). We note that there are only 4 genes that were detected as strong markers across the 2 datasets. While insulin has the strongest average AUROC and the strongest fold change, other strongly recurring markers (ADCYAP1, DLK1) have a higher average fold change of detection rate (fraction of cells that express the marker in the cell type divided by fraction of cells that express the marker in the background).
+
+To better appreciate the trade-off between AUROC and fold change of detection, we can look at genes that offer optimal AUROC performance vs genes that offer optimal detection performance by looking at the Pareto front of markers in the (AUROC, detection) plot.
+
+
+```r
+plot_pareto_markers(meta_markers, "beta", min_recurrence = 0)
+```
+
+<img src="MetaMarkers_files/figure-html/plot_beta_pareto_markers-1.png" style="display: block; margin: auto;" />
+
+In this plot, dotted lines indicate high AUROC performance (sensitive marker) and high detection performance (specific marker, binary-like behavior). For example insulin is extremely sensitive, but ADCYAP1 has a better binary-like behavior while keeping good sensitivity.
+
+To better appreciate what the above explanation means, we can look at the expression of Pareto markers in one of the datasets.
+
+
+```r
+pareto_markers = get_pareto_markers(meta_markers, "beta", min_recurrence=1)
+plot_marker_expression(assay(dataset1, "cpm"), pareto_markers, dataset1$new_label)
+```
+
+<img src="MetaMarkers_files/figure-html/pareto_markers_detail-1.png" style="display: block; margin: auto;" />
+
+```r
+plot_marker_expression(assay(dataset2, "cpm"), pareto_markers, dataset2$new_label)
+```
+
+<img src="MetaMarkers_files/figure-html/pareto_markers_detail-2.png" style="display: block; margin: auto;" />
+
+Insulin is an optimal marker in the sense that it is systematically higher in beta cells. However, there is substantial insulin background expression in the two datasets we used. In comparison, ADCYAP1 is an optimal marker in the sense that it is almost exclusively expressed in beta cells.
+
+To obtain an overview of the strength of markers we can obtain for all cell types, we can make a summary plot that contains Pareto markers for all cell types.
+
+
+```r
+plot_pareto_summary(meta_markers, min_recurrence=0)
+```
+
+<img src="MetaMarkers_files/figure-html/pareto_summary-1.png" style="display: block; margin: auto;" />
+
+We see that all cell types have highly sensitive markers, but the specificity (background expression) for these markers vary considerably. For example, gamma cells don’t have any marker that is both highly specific and sensitive.
+
+
+```r
+plot_pareto_markers(meta_markers, "gamma", min_recurrence=0)
+```
+
+<img src="MetaMarkers_files/figure-html/gamma_markers_detail-1.png" style="display: block; margin: auto;" />
+
+```r
+pareto_markers = get_pareto_markers(meta_markers, "gamma", min_recurrence=0)
+plot_marker_expression(assay(dataset1, "cpm"), pareto_markers, dataset1$new_label)
+```
+
+<img src="MetaMarkers_files/figure-html/gamma_markers_detail-2.png" style="display: block; margin: auto;" />
+
+```r
+plot_marker_expression(assay(dataset2, "cpm"), pareto_markers, dataset2$new_label)
+```
+
+<img src="MetaMarkers_files/figure-html/gamma_markers_detail-3.png" style="display: block; margin: auto;" />
+
+On the opposite side of the spectrum, mesenchymal cells have 3 markers that are both highly specific and sensitive.
+
+
+```r
+plot_pareto_markers(meta_markers, "mesenchymal", min_recurrence = 0)
+```
+
+<img src="MetaMarkers_files/figure-html/mesenchymal_markers_detail-1.png" style="display: block; margin: auto;" />
+
+```r
+pareto_markers = get_pareto_markers(meta_markers, "mesenchymal", min_recurrence=1)
+plot_marker_expression(assay(dataset1, "cpm"), pareto_markers, dataset1$new_label)
+```
+
+<img src="MetaMarkers_files/figure-html/mesenchymal_markers_detail-2.png" style="display: block; margin: auto;" />
+
+```r
+plot_marker_expression(assay(dataset2, "cpm"), pareto_markers, dataset2$new_label)
+```
+
+<img src="MetaMarkers_files/figure-html/mesenchymal_markers_detail-3.png" style="display: block; margin: auto;" />
+
+The violin plot makes it clear how background expression is distributed across cell types: for mesenchymal cells, the background is not uniform, as endothelial cells tend to contribute most to background expression.
+
+We strongly recommend saving the meta-markers to a file for later use.
+
+
+```r
+export_meta_markers(meta_markers, "meta_markers.csv", names(markers))
+```
+
+The list can be retrieved later by loading the MetaMarkers package and running the following (again, note that the export function will compress the file by default, changing the file extension in the process).
+
+
+```r
+meta_markers = read_meta_markers("meta_markers.csv.gz")
+```
+
+# Build hierarchical marker lists
+
+We can explicitly control how background expression affects marker selection by organizing cell types hierarchically. By grouping related cell types into classes:
+ - markers will discriminate better against close cell types, which is particularly useful when there is no global marker that works.
+ - cell types can still be recognized combinatorially (using class markers + within-class markers).
+
+To create hierarchical marker lists, we need to define groups of cell types, but the rest of the procedure is almost identical to simple marker selection.
+
+
+```r
+table(dataset1$new_label)
+#> 
+#>      acinar       alpha        beta       delta      ductal endothelial 
+#>         958        2326        2525         601        1077         252 
+#>     epsilon       gamma mesenchymal 
+#>          18         255         457
+```
+
+Here we create two classes: we will group all endocrine cell types together and attribute all other cell types to a "non-endocrine" class.
+
+
+```r
+to_class = c("acinar"="non-endocrine", "alpha"="endocrine", "beta"="endocrine",
+             "delta"="endocrine", "ductal"="non-endocrine",
+             "endothelial"="non-endocrine", "epsilon"="endocrine",
+             "gamma"="endocrine", "mesenchymal"="non-endocrine")
+dataset1$class = to_class[dataset1$new_label]
+dataset2$class = to_class[dataset2$new_label]
+```
+
+## Class-level markers
+
+We start by computing class-level markers for each dataset, then compute meta-markers.
+
+
+```r
+class_markers = list(
+    baron = compute_markers(assay(dataset1, "cpm"), dataset1$class),
+    muraro = compute_markers(assay(dataset2, "cpm"), dataset2$class)
+)
+class_meta_markers = make_meta_markers(class_markers, detailed_stats = TRUE)
+```
+
+We look at Pareto markers for each class.
+
+
+```r
+plot_pareto_summary(class_meta_markers, min_recurrence = 0)
+```
+
+<img src="MetaMarkers_files/figure-html/class_pareto_summary-1.png" style="display: block; margin: auto;" />
+
+Non-endocrine cell types have better markers overall, but both classes have highly specific and sensitive markers. To better appreciate how background expression is distributed, we look at the expression of Pareto markers in our datasets.
+
+
+```r
+plot_pareto_markers(class_meta_markers, "endocrine", min_recurrence=0)
+```
+
+<img src="MetaMarkers_files/figure-html/endocrine_pareto-1.png" style="display: block; margin: auto;" />
+
+```r
+pareto_markers = get_pareto_markers(class_meta_markers, "endocrine", min_recurrence=1)[1:10]
+plot_marker_expression(assay(dataset1, "cpm"), pareto_markers, dataset1$new_label)
+```
+
+<img src="MetaMarkers_files/figure-html/endocrine_pareto-2.png" style="display: block; margin: auto;" />
+
+```r
+plot_marker_expression(assay(dataset2, "cpm"), pareto_markers, dataset2$new_label)
+```
+
+<img src="MetaMarkers_files/figure-html/endocrine_pareto-3.png" style="display: block; margin: auto;" />
+
+We note that background expression is a concern particularly in the Muraro dataset. CHGB and PCSK1N are good examples of trade-off choices between specificity and sensitivity.
+
+
+```r
+plot_pareto_markers(class_meta_markers, "non-endocrine", min_recurrence=0)
+```
+
+<img src="MetaMarkers_files/figure-html/non_endocrine_pareto-1.png" style="display: block; margin: auto;" />
+
+```r
+pareto_markers = get_pareto_markers(class_meta_markers, "non-endocrine", min_recurrence=1)
+plot_marker_expression(assay(dataset1, "cpm"), pareto_markers, dataset1$new_label)
+```
+
+<img src="MetaMarkers_files/figure-html/non_endocrine_pareto-2.png" style="display: block; margin: auto;" />
+
+```r
+plot_marker_expression(assay(dataset2, "cpm"), pareto_markers, dataset2$new_label)
+```
+
+<img src="MetaMarkers_files/figure-html/non_endocrine_pareto-3.png" style="display: block; margin: auto;" />
+
+On the non-endocrine side, IFITM3 and CDC42PEP1 are strong marker genes, with the option to choose the latter to limit background expression in the Muraro dataset.
+
+
+## Within-class markers
+
+Having establish good class markers, we can look within classes. The computation of markers within classes is obtained using the same procedure as before, but we specific a "group" parameter to indicate which cell types need to be handled as separate classes.
+
+
+```r
+markers = list(
+    baron = compute_markers(assay(dataset1, "cpm"), dataset1$new_label, dataset1$class),
+    muraro = compute_markers(assay(dataset2, "cpm"), dataset2$new_label, dataset2$class)
+)
+meta_markers = make_meta_markers(markers, detailed_stats = TRUE)
+```
+
+We look at Pareto markers for each cell type.
+
+
+```r
+plot_pareto_summary(meta_markers, min_recurrence = 0)
+```
+
+<img src="MetaMarkers_files/figure-html/pareto_within_class-1.png" style="display: block; margin: auto;" />
+
+Here, markers look roughly equivalent to the non-stratified analysis, which indicates that the best markers that distinguish say endocrine cell types are naturally not expressed in non-endocrine cell types, too. Let’s take a closer look at gamma Pareto markers.
+
+
+```r
+plot_pareto_markers(meta_markers, "gamma", min_recurrence=0)
+```
+
+<img src="MetaMarkers_files/figure-html/pareto_gamma_within-1.png" style="display: block; margin: auto;" />
+
+```r
+pareto_markers = get_pareto_markers(meta_markers, "gamma", min_recurrence=0)
+plot_marker_expression(assay(dataset1, "cpm"), pareto_markers, dataset1$new_label)
+```
+
+<img src="MetaMarkers_files/figure-html/pareto_gamma_within-2.png" style="display: block; margin: auto;" />
+
+```r
+plot_marker_expression(assay(dataset2, "cpm"), pareto_markers, dataset2$new_label)
+```
+
+<img src="MetaMarkers_files/figure-html/pareto_gamma_within-3.png" style="display: block; margin: auto;" />
+
+We note that the last Pareto marker (KCNG1) is quite specific to gamma cells within endocrine cell types (alpha, beta, gamma, delta, gamma). However, there is substantial background expression in mesenchymal cells. When using hierarchical markers, cell types must theoretically be characterized by using a combination of class-level markers (e.g., CHGB, eliminating all non-endocrine cell types) and within-class markers (such as KCNG1).
