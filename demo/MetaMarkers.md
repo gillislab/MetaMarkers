@@ -1,15 +1,7 @@
----
-title: "MetaMarkers: robust marker signatures from single-cell data"
-output: rmarkdown::html_vignette
-vignette: >
-  %\VignetteIndexEntry{MetaMarkers: robust marker signatures from single-cell data}
-  %\VignetteEngine{knitr::rmarkdown}
-  %\VignetteEncoding{UTF-8}
----
+# MetaMarkers: robust marker signatures from single-cell data
 
 
-
-# Introduction
+## Introduction
 
 Single-cell RNA-sequencing technologies have enabled the discovery and characterization of an incredible number of novel cell types and batches. However, cell types are usually measured in only one biological condition and subject to technical variability, making it difficult to identify robust markers, particularly for rare populations. MetaMarkers proposed a simple methodology to pool marker information across dataset while keeping dataset independents, identifying robust marker signatures and 
 
@@ -27,7 +19,7 @@ To obtain matching annotation across datasets in an automated way, we suggest us
 
 In this vignette, we illustrate how to create meta-marker lists by using standards pancreas datasets. We show how to create meta-marker lists, visualize and pick the best meta-markers. We then show how to create hierarchical lists by grouping cell types into endocrine and non-endocrine classes.
 
-# Installation
+## Installation
 
 To install the latest MetaMarkers version, run the following code in an R session.
 
@@ -48,13 +40,13 @@ if (!requireNamespace("BiocManager", quietly = TRUE)) {
     BiocManager::install()
 }
 BiocManager::install("scRNAseq")
-#> Update all/some/none? [a/s/n]: Update all/some/none? [a/s/n]: Update all/some/none? [a/s/n]:
+#> Update all/some/none? [a/s/n]:
 ```
 
 To avoid conflicts related to the installation process, we strongly recommend restarting your R session before proceeding to the rest of the vignette.
 
 
-# Create marker lists for individual pancreas datasets
+## Create marker lists for individual pancreas datasets
 
 We start by loading the packages needed for our analysis: MetaMarkers, scRNAseq (package used to access datasets) and dplyr (data manipulation, part of the tidyverse).
 
@@ -167,7 +159,7 @@ export_markers(markers_dataset1, "baron.csv")
 export_markers(markers_dataset2, "muraro.csv")
 ```
 
-# Build list of meta-analytic markers
+## Build list of meta-analytic markers
 
 We now build meta-markers from invidual datasets marker lists. First we load the markers we previously exported. Note that the export function compresses marker files by default, so the extension has changed.
 
@@ -306,7 +298,7 @@ The list can be retrieved later by loading the MetaMarkers package and running t
 meta_markers = read_meta_markers("meta_markers.csv.gz")
 ```
 
-# Build hierarchical marker lists
+## Build hierarchical marker lists
 
 We can explicitly control how background expression affects marker selection by organizing cell types hierarchically. By grouping related cell types into classes:
  - markers will discriminate better against close cell types, which is particularly useful when there is no global marker that works.
@@ -336,7 +328,7 @@ dataset1$class = to_class[dataset1$new_label]
 dataset2$class = to_class[dataset2$new_label]
 ```
 
-## Class-level markers
+### Class-level markers
 
 We start by computing class-level markers for each dataset, then compute meta-markers.
 
@@ -405,7 +397,7 @@ plot_marker_expression(assay(dataset2, "cpm"), pareto_markers, dataset2$new_labe
 On the non-endocrine side, IFITM3 and CDC42PEP1 are strong marker genes, with the option to choose the latter to limit background expression in the Muraro dataset.
 
 
-## Within-class markers
+### Within-class markers
 
 Having establish good class markers, we can look within classes. The computation of markers within classes is obtained using the same procedure as before, but we specific a "group" parameter to indicate which cell types need to be handled as separate classes.
 
