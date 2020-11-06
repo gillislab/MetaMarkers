@@ -114,8 +114,17 @@ auroc_p_value = function(aurocs, label_matrix, two_tailed = TRUE, tie_correction
     result = Z
     if (two_tailed) {
         is_not_na = !is.na(Z)
-        result[Z<=0 & is_not_na] = stats::pnorm(Z[Z<=0 & is_not_na], log.p = log.p) * 2
-        result[Z>0 & is_not_na] = stats::pnorm(Z[Z>0 & is_not_na], lower.tail=FALSE, log.p = log.p) * 2
+        neg_tail = stats::pnorm(Z[Z<=0 & is_not_na], log.p = log.p)
+        pos_tail = stats::pnorm(Z[Z>0 & is_not_na], lower.tail=FALSE, log.p = log.p)
+        if (log.p) {
+            neg_tail = neg_tail + log(2)
+            pos_tail = pos_tail + log(2)
+        } else {
+            neg_tail = neg_tail*2
+            pos_tail = pos_tail*2
+        }
+        result[Z<=0 & is_not_na] = neg_tail
+        result[Z>0 & is_not_na] = pos_tail
     } else {
         result = stats::pnorm(Z, lower.tail=FALSE, log.p = log.p)
     }
