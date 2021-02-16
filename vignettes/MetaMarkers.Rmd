@@ -39,21 +39,22 @@ In this vignette, we illustrate how to create meta-marker lists by using standar
 
 To install the latest MetaMarkers version, run the following code in an R session.
 
-```{r install_metamarkers, message=FALSE}
+```{r install_metamarkers, message=FALSE, eval=FALSE}
 if (!requireNamespace("devtools", quietly = TRUE)) {
     install.packages("devtools")
 }
-#devtools::install_github("gillislab/MetaMarkers")
+devtools::install_github("gillislab/MetaMarkers")
 ```
 
 The following packages are required to run the vignette.
 
-```{r install_dependencies, message=FALSE}
+```{r install_dependencies, message=FALSE, eval=FALSE}
 if (!requireNamespace("BiocManager", quietly = TRUE)) {
     install.packages("BiocManager")
     BiocManager::install()
 }
-BiocManager::install("scRNAseq")
+if (!requireNamespace("scRNAseq", quietly = TRUE))
+    BiocManager::install("scRNAseq")
 ```
 
 To avoid conflicts related to the installation process, we strongly recommend restarting your R session before proceeding to the rest of the vignette.
