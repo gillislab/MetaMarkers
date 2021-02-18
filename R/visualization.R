@@ -1,4 +1,33 @@
 
+#' Plot expression of markers in cell type as violin plots.
+#'
+#' @param expression_matrix Expression matrix (with genes as rows) in sparse or
+#' dense format.
+#' @param genes Vector of gene names.
+#' @param cell_type_label Vector of cell type names (must be same length as
+#' number of columns in expression_matrix)
+#' @return ggplot2 object
+#'
+#' @export
+plot_marker_expression = function(expression_matrix, genes, cell_type_label) {
+    expr = Matrix::t(expression_matrix[genes,]) %>%
+        as.matrix() %>%
+        tibble::as_tibble() %>%
+        cbind(label = cell_type_label) %>%
+        tidyr::pivot_longer(cols = dplyr::all_of(genes), names_to = "gene", values_to = "cpm") %>%
+        dplyr::mutate(gene = factor(.data$gene, levels = genes))
+
+    result = expr %>%
+        ggplot2::ggplot(ggplot2::aes(x = .data$label, y = .data$cpm+1, fill = .data$label)) +
+        ggplot2::geom_violin(scale = "width") +
+        ggplot2::scale_y_log10() +
+        ggplot2::facet_grid(gene ~ .) +
+        ggplot2::guides(fill = FALSE) +
+        ggplot2::theme(axis.text.x = ggplot2::element_text(angle = 45, hjust = 1)) +
+        ggplot2::labs(y = "Gene expression", x = "Cell type")
+    return(result)
+}
+
 #' @export
 plot_marker_scores = function(scores, umap_coordinates, normalize_scores=FALSE) {
     colnames(umap_coordinates) = c("umap_1", "umap_2")
