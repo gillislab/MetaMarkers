@@ -25,7 +25,8 @@ Imports:
     data.table,
     grDevices,
     RColorBrewer,
-    ggplot2
+    ggplot2,
+    uwot
 Suggests: 
     knitr,
     rmarkdown,

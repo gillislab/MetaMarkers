@@ -21,13 +21,13 @@ marker_list_to_matrix = function(marker_list, known_genes, weighted=TRUE) {
 
 #' @export
 marker_table_to_matrix = function(marker_table, known_genes, weighted=TRUE) {
-    marker_table = dplyr::select(marker_table, cell_type, gene) %>%
-        filter(gene %in% known_genes)
+    marker_table = dplyr::select(marker_table, .data$cell_type, .data$gene) %>%
+        dplyr::filter(.data$gene %in% known_genes)
     if (weighted) {
         x = marker_table %>%
             dplyr::group_by(cell_type) %>%
-            mutate(w = 1/n()) %>%
-            pull(w)
+            dplyr::mutate(w = 1/dplyr::n()) %>%
+            dplyr::pull(.data$w)
     } else {
         x = 1
     }
