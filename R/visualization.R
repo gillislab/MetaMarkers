@@ -52,6 +52,7 @@ plot_marker_scores = function(scores, umap_coordinates, normalize_scores=FALSE) 
     return(result)
 }
 
+#' @export
 plot_assignments = function(assignments, umap_coordinates, enrichment_threshold = 1) {
     colnames(umap_coordinates) = c("umap_1", "umap_2")
     to_plot = assignments %>%
@@ -68,6 +69,7 @@ plot_assignments = function(assignments, umap_coordinates, enrichment_threshold 
     return(result)    
 }
 
+#' @export
 compute_umap = function(expr) {
     result = uwot::umap(t(as.matrix(expr))) %>%
         tibble::as_tibble(.name_repair = "minimal") %>%
