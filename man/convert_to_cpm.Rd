@@ -4,10 +4,13 @@
 \alias{convert_to_cpm}
 \title{Convert expression matrix to CPM (library size normalization).}
 \usage{
-convert_to_cpm(M)
+convert_to_cpm(M, scale_factor = 1e+06)
 }
 \arguments{
 \item{M}{Expression matrix (with genes as rows) in sparse or dense format.}
+
+\item{scale_factor}{Cell counts sum to this value after normalization
+(1e6 by default).}
 }
 \value{
 Matrix in same format as input.

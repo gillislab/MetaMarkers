@@ -2,6 +2,8 @@
 #' Convert expression matrix to CPM (library size normalization).
 #'
 #' @param M Expression matrix (with genes as rows) in sparse or dense format.
+#' @param scale_factor Cell counts sum to this value after normalization
+#' (1e6 by default).
 #' @return Matrix in same format as input.
 #'
 #' @export
