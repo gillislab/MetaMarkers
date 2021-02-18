@@ -9,7 +9,9 @@ plot_pareto_markers(
   cell_type_name,
   min_recurrence = 1,
   min_auroc = 0.5,
-  min_fc = 0
+  min_fc = 0,
+  fc_threshold = 3,
+  auroc_threshold = 0.8
 )
 }
 \arguments{
@@ -24,6 +26,12 @@ in meta-markers).}
 \item{min_auroc}{AUROC threshold for a marker to be plotted.}
 
 \item{min_fc}{Fold change of detection threshold for a marker to be plotted.}
+
+\item{fc_threshold}{Threshold at which to draw a dashed line on the
+AUROC axis (set to NULL to skip).}
+
+\item{auroc_threshold}{Threshold at which to draw a dashed line on the
+fold change axis (set to NULL to skip).}
 }
 \description{
 This visualization displays markers meeting minimal threshold conditions

@@ -12,10 +12,15 @@
 #' (# of datasets where marker was DE) 
 #' @param min_auroc AUROC threshold for a marker to be plotted.
 #' @param min_fc Fold change of detection threshold for a marker to be plotted.
+#' @param fc_threshold Threshold at which to draw a dashed line on the 
+#' AUROC axis (set to NULL to skip).
+#' @param auroc_threshold Threshold at which to draw a dashed line on the
+#' fold change axis (set to NULL to skip).
 #'
 #' @export
 plot_pareto_markers = function(meta_markers, cell_type_name, min_recurrence = 1,
-                               min_auroc = 0.5, min_fc = 0) {
+                               min_auroc = 0.5, min_fc = 0, fc_threshold = 3,
+                               auroc_threshold = 0.8) {
     max_recurrence = max(meta_markers$recurrence)
     my_blue = RColorBrewer::brewer.pal(n = 9, "Blues")[c(3,8)]
     my_palette = c(grDevices::colorRampPalette(my_blue)(max_recurrence-min_recurrence), "black")
@@ -30,7 +35,7 @@ plot_pareto_markers = function(meta_markers, cell_type_name, min_recurrence = 1,
         dplyr::group_by(.data$cell_type) %>%
         dplyr::mutate(is_pareto = is_pareto_front(.data$auroc, .data$fold_change_detection))
 
-    filtered_markers %>%
+    result = filtered_markers %>%
         ggplot2::ggplot(ggplot2::aes(x = log2(.data$fold_change_detection),
                                      y = .data$auroc,
                                      label = .data$gene)) +
@@ -39,11 +44,19 @@ plot_pareto_markers = function(meta_markers, cell_type_name, min_recurrence = 1,
         ggplot2::geom_label(data = dplyr::filter(filtered_markers, .data$is_pareto),
                             ggplot2::aes(col = .data$recurrence),
                             show.legend = FALSE) +
-        ggplot2::geom_hline(yintercept = 0.8, linetype = "dashed") +
-        ggplot2::geom_vline(xintercept = 3, linetype = "dashed") +
         ggplot2::labs(x = "log2(Fold change) of detection rate", y = "AUROC",
                       col = "# Datasets") +
         ggplot2::scale_color_manual(values = my_palette)
+    
+    if (!is.null(auroc_threshold)) {
+        result = result + ggplot2::geom_hline(yintercept = auroc_threshold,
+                                              linetype = "dashed")
+    }
+    if (!is.null(fc_threshold)) {
+        result = result + ggplot2::geom_vline(xintercept = fc_threshold,
+                                              linetype = "dashed")
+    }
+    return(result)
 }
 
 # Find points that are on the Pareto front wrt x and y
