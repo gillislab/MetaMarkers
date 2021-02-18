@@ -5,8 +5,8 @@
 #' @return Matrix in same format as input.
 #'
 #' @export
-convert_to_cpm = function(M) {
-    normalization_factor = Matrix::colSums(M) / 1000000
+convert_to_cpm = function(M, scale_factor=1000000) {
+    normalization_factor = Matrix::colSums(M) / scale_factor
     if (methods::is(M, "dgCMatrix")) {
         M@x = M@x / rep.int(normalization_factor, diff(M@p))
         return(M)
