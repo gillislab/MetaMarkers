@@ -43,6 +43,15 @@ marker_table_to_matrix = function(marker_table, known_genes, weighted=TRUE) {
 }
 
 #' @export
+compute_marker_enrichment = function(scores) {
+    result = scores+0.0001
+    result = matrixStats::t_tx_OP_y(result, colMeans(result), "/")
+    #result = matrixStats::t_tx_OP_y(scores, colMeans(scores), "-")
+    dimnames(result) = dimnames(scores)
+    return(result)
+}
+
+#' @export
 assign_cells = function(scores) {
     tscores = t(scores)
     first_index = max.col(tscores, ties.method = "first")
@@ -52,12 +61,12 @@ assign_cells = function(scores) {
     second_value = scores[cbind(second_index, seq_len(ncol(scores)))]
 
     label = rownames(scores)[first_index]
-    quality = first_value / (colSums(scores) + first_value)
+    enrichment = (first_value+0.0001) / colMeans(scores+0.0001)
     is_tie = first_value == second_value
     label[is_tie] = "unassigned"
-    quality[is_tie] = 0
+    #enrichment[is_tie] = 0
     
-    return(data.frame(predicted = label, score = first_value, quality = quality))
+    return(data.frame(predicted = label, score = first_value, enrichment = enrichment))
 }
 
 #' @export
@@ -83,18 +92,36 @@ summarize_fold_change = function(scores, true_labels) {
 }
 
 #' @export
-summarize_precision_recall = function(predictor, is_positive, threshold) {
-    pp = sapply(threshold, function(t) { sum(predictor > t) })
-    tp = sapply(threshold, function(t) { sum(predictor > t & is_positive) })
+summarize_precision_recall = function(scores, true_labels, score_threshold) {
+    if (!is.matrix(true_labels)) {
+        true_labels = design_matrix(true_labels)
+    }
+    
+    if (length(score_threshold) > 1) {
+        result = lapply(score_threshold, function(t) {
+            summarize_precision_recall(scores, true_labels, t)
+        })
+        result = dplyr::bind_rows(result)
+        return(result)
+    }
+    
+    binary_scores = scores > score_threshold
+    pp = rowSums(binary_scores)
+    tp = binary_scores %*% true_labels
     fp = pp - tp
-    result = data.frame(
-        threshold = threshold,
+    p = colSums(true_labels)
+    n = nrow(true_labels) - p
+    
+    result = list(
         precision = tp / pp,
-        recall = tp / sum(is_positive),
-        fpr = fp / sum(!is_positive)
+        recall = t(t(tp) / p),
+        fpr = t(t(fp) / n)
     )
     result$f1 = 2/(1/result$precision + 1/result$recall)
     result$balanced_accuracy = (1 + result$recall - result$fpr) / 2
-    result = tidyr::pivot_longer(result, -threshold, "stat", "value")
+    result = tibble::as_tibble(sapply(result, as.vector)) %>%
+        tibble::add_column(marker_set = rep(rownames(scores), ncol(true_labels)), .before=1) %>%
+        tibble::add_column(true_label = rep(colnames(true_labels), each = nrow(scores)), .after=1) %>%
+        tibble::add_column(score_threshold = score_threshold, .before=1)
     return(result)
 }
