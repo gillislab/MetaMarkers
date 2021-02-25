@@ -1,4 +1,4 @@
-
+#' @param marker_set A marker table containing the following columns: group, cell_type and gene.
 #' @export
 score_cells = function(expr, marker_set) {
     if (is.data.frame(marker_set)) {
@@ -21,7 +21,9 @@ marker_list_to_matrix = function(marker_list, known_genes, weighted=TRUE) {
 
 #' @export
 marker_table_to_matrix = function(marker_table, known_genes, weighted=TRUE) {
-    marker_table = dplyr::select(marker_table, .data$cell_type, .data$gene) %>%
+    marker_table = marker_table %>%
+        dplyr::mutate(cell_type = paste(.data$group, .data$cell_type, sep = "|")) %>%
+        dplyr::select(.data$cell_type, .data$gene) %>%
         dplyr::filter(.data$gene %in% known_genes)
     if (weighted) {
         x = marker_table %>%
@@ -43,16 +45,98 @@ marker_table_to_matrix = function(marker_table, known_genes, weighted=TRUE) {
 }
 
 #' @export
-compute_marker_enrichment = function(scores) {
-    result = scores+0.0001
-    result = matrixStats::t_tx_OP_y(result, colMeans(result), "/")
-    #result = matrixStats::t_tx_OP_y(scores, colMeans(scores), "-")
-    dimnames(result) = dimnames(scores)
+compute_marker_enrichment = function(scores, by_group=TRUE) {
+    if (by_group) {
+        group = get_group(rownames(scores))
+        if(any(group == "")) {
+            warning("No group information: assuming that all cell types are at the same level.")
+            by_group = FALSE
+        }
+    }
+    if (by_group) {
+        tscores = t(scores+0.0001)
+        result = lapply(unique(group), function(g) {
+            scores_g = tscores[, group == g]
+            subresult = scores_g / rowMeans(scores_g)
+            dimnames(subresult) = dimnames(scores_g)
+            subresult
+        })
+        result = t(do.call(cbind, result))
+    } else {
+        result = scores+0.0001
+        result = matrixStats::t_tx_OP_y(result, colMeans(result), "/")
+        dimnames(result) = dimnames(scores)
+    }
     return(result)
 }
 
 #' @export
-assign_cells = function(scores) {
+get_group = function(cell_type_label) {
+    if (all(grepl("\\|", cell_type_label))) {
+        sapply(strsplit(cell_type_label, "|", TRUE), "[", 1)
+    } else {
+        return(rep("", length(cell_type_label)))
+    }
+}
+
+#' @export
+get_cell_type = function(cell_type_label) {
+    if (all(grepl("\\|", cell_type_label))) {
+        sapply(lapply(strsplit(cell_type_label, "|", TRUE), "[", -1), paste, collapse="|")
+    } else {
+        return(cell_type_label)
+    }
+}
+
+#' @export
+assign_cells = function(scores, group_assignment=NULL) {
+    group = get_group(rownames(scores))
+    unique_groups = unique(group)
+    if (is.null(group_assignment) & length(unique_groups)>1) {
+        warning("Detected group information in the score matrix (",
+                paste(unique_groups, collapse = ", "),
+                ") but no group assignments were provided. ",
+                "Usually this means that marker sets were intended to use ",
+                "hierarchically and groups needed to be assigned first. ",
+                "Proceeding without group information (any cell can be any cell type).")
+    }
+    if (!is.null(group_assignment)) {
+        unique_assignments = unique(group_assignment)
+        unknown_assignments = unique_assignments[!(unique_assignments %in% unique_groups)]
+        if (any(unique_groups == "")) {
+            stop("Group assignments provided but no group information in the ",
+                 "score matrix. Did you provide group information to score_cells?")
+        }
+        if (length(unknown_assignments) > 0) {
+            warning("Some group assignments (",
+                    paste(unknown_assignments, collapse = ", "),
+                    ") do not match groups in the score matrix (",
+                    paste(unique_groups, collapse = ", "),
+                    ") and will result in NA predictions.")
+        }
+    }
+    
+    if (is.null(group_assignment)) {
+        result = assign_cells_(scores)
+    } else {
+        result = lapply(unique_assignments, function(group_name) {
+            keep_cell = group_assignment == group_name
+            keep_ct = group == group_name
+            assign_cells_(scores[keep_ct, keep_cell, drop=FALSE]) %>%
+                tibble::add_column(cell_id = seq_along(keep_cell)[keep_cell])
+        }) %>%
+            dplyr::bind_rows() %>%
+            dplyr::arrange(.data$cell_id) %>%
+            dplyr::select(-.data$cell_id)
+    }
+    return(result)
+}
+
+assign_cells_ = function(scores) {
+    if (nrow(scores) == 0) {
+        return(data.frame(group = rep(NA, ncol(scores)), predicted = NA,
+                          score = NA, enrichment = NA))
+    }
     tscores = t(scores)
     first_index = max.col(tscores, ties.method = "first")
     first_value = scores[cbind(first_index, seq_len(ncol(scores)))]
@@ -61,12 +145,15 @@ assign_cells = function(scores) {
     second_value = scores[cbind(second_index, seq_len(ncol(scores)))]
 
     label = rownames(scores)[first_index]
+    group_label = get_group(label)
+    label = get_cell_type(label)
     enrichment = (first_value+0.0001) / colMeans(scores+0.0001)
     is_tie = first_value == second_value
     label[is_tie] = "unassigned"
     #enrichment[is_tie] = 0
     
-    return(data.frame(predicted = label, score = first_value, enrichment = enrichment))
+    return(data.frame(group = group_label, predicted = label,
+                      score = first_value, enrichment = enrichment))
 }
 
 #' @export
