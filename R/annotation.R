@@ -56,7 +56,7 @@ compute_marker_enrichment = function(scores, by_group=TRUE) {
     if (by_group) {
         tscores = t(scores+0.0001)
         result = lapply(unique(group), function(g) {
-            scores_g = tscores[, group == g]
+            scores_g = tscores[, group == g, drop=FALSE]
             subresult = scores_g / rowMeans(scores_g)
             dimnames(subresult) = dimnames(scores_g)
             subresult
