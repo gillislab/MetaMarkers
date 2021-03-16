@@ -29,7 +29,7 @@ plot_marker_expression = function(expression_matrix, genes, cell_type_label) {
 }
 
 #' @export
-plot_marker_scores = function(scores, umap_coordinates, normalize_scores=FALSE) {
+plot_marker_scores = function(scores, umap_coordinates, normalize_scores=FALSE, point_size=1, rasterize_umap=FALSE) {
     colnames(umap_coordinates) = c("umap_1", "umap_2")
     to_plot = tibble::as_tibble(t(as.matrix(scores)), .name_repair = "minimal") %>%
         dplyr::bind_cols(umap_coordinates) %>%
@@ -42,9 +42,13 @@ plot_marker_scores = function(scores, umap_coordinates, normalize_scores=FALSE) 
             dplyr::mutate(score = (.data$score-min(.data$score))/(max(.data$score)-min(.data$score)))
     }
         
-    result = to_plot %>%
-        ggplot2::ggplot(ggplot2::aes(x = .data$umap_1, y = .data$umap_2, col = .data$score)) +
-        ggplot2::geom_point(size=0.1) +
+    result = ggplot2::ggplot(to_plot, ggplot2::aes(x = .data$umap_1, y = .data$umap_2, col = .data$score))
+    if (rasterize_umap) {
+        result = result + ggrastr::geom_point_rast(size=point_size)
+    } else {
+        result = result + ggplot2::geom_point(size=point_size)
+    }
+    result = result +
         ggplot2::facet_wrap(~ .data$cell_type) +
         ggplot2::scale_color_gradient(low = "gray100", high = "darkgreen") +
         ggplot2::theme_bw(base_size = 20) +
@@ -53,16 +57,20 @@ plot_marker_scores = function(scores, umap_coordinates, normalize_scores=FALSE) 
 }
 
 #' @export
-plot_assignments = function(assignments, umap_coordinates, enrichment_threshold = 1) {
+plot_assignments = function(assignments, umap_coordinates, enrichment_threshold = 1, point_size=1, rasterize_umap=FALSE) {
     colnames(umap_coordinates) = c("umap_1", "umap_2")
     to_plot = assignments %>%
         dplyr::bind_cols(umap_coordinates) %>%
         dplyr::mutate(predicted = ifelse(.data$enrichment < enrichment_threshold, NA, .data$predicted)) %>%
         dplyr::mutate(predicted = ifelse(.data$predicted == "unassigned", NA, .data$predicted))
     
-    result = to_plot %>%
-        ggplot2::ggplot(ggplot2::aes(x = .data$umap_1, y = .data$umap_2, col = .data$predicted)) +
-        ggplot2::geom_point(size=0.1) +
+    result = ggplot2::ggplot(to_plot, ggplot2::aes(x = .data$umap_1, y = .data$umap_2, col = .data$predicted))
+    if (rasterize_umap) {
+        result = result + ggrastr::geom_point_rast(size=point_size)
+    } else {
+        result = result + ggplot2::geom_point(size=point_size)
+    }
+    result = result +
         ggplot2::theme_bw(base_size = 20) +
         ggplot2::scale_color_hue(na.value = "gray80") +
         ggplot2::labs(x = "UMAP1", y = "UMAP2", col = "Cell type")

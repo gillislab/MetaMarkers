@@ -26,7 +26,8 @@ Imports:
     grDevices,
     RColorBrewer,
     ggplot2,
-    uwot
+    uwot,
+    ggrastr
 Suggests: 
     knitr,
     rmarkdown,
