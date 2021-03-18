@@ -13,10 +13,10 @@ dense format.}
 \item{genes}{Vector of gene names.}
 
 \item{cell_type_label}{Vector of cell type names (must be same length as
-number of columns in expression_matrix)}
+number of columns in expression_matrix).}
 }
 \value{
-ggplot2 object
+A ggplot2 object.
 }
 \description{
 Plot expression of markers in cell type as violin plots.
