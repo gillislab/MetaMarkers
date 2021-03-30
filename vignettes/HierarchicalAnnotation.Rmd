@@ -1,0 +1,323 @@
+---
+title: "MetaMarkers: robust marker signatures from single-cell data (hierarchical annotation vignette)"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{MetaMarkers: robust marker signatures from single-cell data (hierarchical annotation vignette)}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  fig.align = "center",
+  fig.width = 6,
+  fig.height = 4.5
+)
+```
+
+## Introduction
+
+We assume that the reader is familiar with the main "MetaMarkers" vignette, which shows how to select meta-markers from a compendium of pancreas dataset. We also assume that the reader is somewhat familiar with the "Annotation" vignette, which performs cell type annotation using a flat hierarchy of cell types. In this vignette, we will focus on using *hierarchical* markers for cell type annotation, and show how to build a benchmark to find highly informative markers.
+
+As in the main vignette, the requirements are:
+ - a list of annotated datasets.
+ - matching cell type names across datasets.
+ - all packages installed in the main vignette.
+
+We load the packages needed for our analysis: MetaMarkers, scRNAseq (package used to access datasets), dplyr (data manipulation, part of the tidyverse), and ggplot2 (figures, part of the tidyverse).
+
+```{r setup, message=FALSE}
+library(MetaMarkers)
+library(scRNAseq)
+library(dplyr)
+library(ggplot2)
+```
+
+## Prepare datasets
+
+The 3 pancreas atlas datasets are built in a similar fashion to the "Annotation" vignette (see vignette for details). Briefly, we start by loading the data:
+
+```{r load_datasets, message=FALSE}
+dataset1 = scRNAseq::BaronPancreasData()
+dataset2 = scRNAseq::MuraroPancreasData()
+dataset3 = scRNAseq::SegerstolpePancreasData()
+rownames(dataset2) = rowData(dataset2)$symbol
+```
+
+We normalize cell type names across datasets:
+
+```{r rename_cell_types}
+new_label = dataset1$label
+new_label[new_label=="activated_stellate"] = "mesenchymal"
+new_label[new_label=="quiescent_stellate"] = "mesenchymal"
+dataset1$new_label = new_label
+
+new_label = dataset2$label
+new_label[new_label=="duct"] = "ductal"
+new_label[new_label=="pp"] = "gamma"
+dataset2$new_label = new_label
+
+new_label = dataset3$`cell type`
+new_label = gsub(" cell", "", new_label)
+new_label[new_label=="PSC"] = "mesenchymal"
+dataset3$new_label = new_label
+
+common_labels = Reduce(intersect, list(
+    unique(dataset1$new_label), unique(dataset2$new_label), unique(dataset3$new_label)
+))
+```
+
+We restrict datasets to common cell types and normalize data to CPM format:
+
+```{r cpm_normalize}
+datasets = list(baron = dataset1, muraro = dataset2, seger = dataset3)
+for (dataset in names(datasets)) {
+    keep_cell = datasets[[dataset]]$new_label %in% common_labels
+    datasets[[dataset]] = datasets[[dataset]][, keep_cell]
+    cpm(datasets[[dataset]]) = convert_to_cpm(counts(datasets[[dataset]]))
+}
+```
+
+Finally, we group cell types into 2 classes: endocrine and non-endocrine.
+
+```{r add_class_labels}
+for (dataset in names(datasets)) {
+    class_label = rep("non-endocrine", ncol(datasets[[dataset]]))
+    is_endocrine = datasets[[dataset]]$new_label %in% c("alpha", "beta", "gamma", "delta", "epsilon")
+    class_label[is_endocrine] = "endocrine"
+    datasets[[dataset]]$class = class_label
+}
+```
+
+# Marker selection
+
+We proceed to marker selection for each individual dataset. 
+
+```{r compute_markers}
+class_markers = lapply(datasets, function(dataset) {
+    compute_markers(cpm(dataset), dataset$class)
+})
+names(class_markers) = names(datasets)
+```
+We use leave-one-dataset-out cross-validation: we build meta-markers from 2 datasets and predict on the third dataset.
+Then build meta-markers from invidual datasets marker lists, leaving one dataset out.
+
+```{r compute_meta_markers}
+class_meta_markers = lapply(names(class_markers), function(leave_out) {
+    make_meta_markers(class_markers[names(class_markers) != leave_out])
+})
+names(class_meta_markers) = names(class_markers)
+```
+
+```{r compute_ct_markers}
+ct_markers = lapply(datasets, function(dataset) {
+    compute_markers(cpm(dataset), dataset$new_label, dataset$class)
+})
+names(ct_markers) = names(datasets)
+
+ct_meta_markers = lapply(names(ct_markers), function(leave_out) {
+    make_meta_markers(ct_markers[names(ct_markers) != leave_out])
+})
+names(ct_meta_markers) = names(ct_markers)
+```
+
+# Hierarchical cell type prediction
+
+As an example, we start by predicting cell types from the Segerstolpe dataset using the top 100 Baron+Muraro meta-markers. First we select the top 100 meta-markers (leaving Segerstolpe out) for each cell type, then predict cell types in the Segerstolpe dataset:
+
+```{r score_class}
+test_dataset = "seger"
+top_markers = filter(class_meta_markers[[test_dataset]], rank<=100)
+class_scores = score_cells(log1p(cpm(datasets[[test_dataset]])), top_markers)
+class_enrichment = compute_marker_enrichment(class_scores)
+class_pred = assign_cells(class_scores)
+```
+
+To find the ideal enrichment value, we could use the full cell type assessment, but for the class level we will use a simpler method:
+
+```{r}
+hist(class_enrichment["all|endocrine",])
+hist(class_enrichment["all|non-endocrine",])
+```
+
+All class assignments are relatively clear, we’ll proceed with predictions at the cell type level assuming that we got all class-level predictions correct.
+
+```{r score_cell_types}
+top_markers = filter(ct_meta_markers[[test_dataset]], rank<=100)
+ct_scores = score_cells(log1p(cpm(datasets[[test_dataset]])), top_markers)
+head(ct_scores)
+```
+
+Note that scores encode group info, e.g. "endocrine|alpha".
+
+```{r compute_ct_enrichment}
+ct_enrichment = compute_marker_enrichment(ct_scores, by_group = TRUE)
+ct_pred = assign_cells(ct_scores, group_assignment = class_pred$predicted)
+```
+
+```{r assess_predictions}
+ct_pred = ct_pred %>%
+    mutate(true_label = datasets[[test_dataset]]$new_label)
+mean(ct_pred$predicted == ct_pred$true_label)
+```
+
+Accuracy of 98.3%, almost 3 points higher than flat annotation (95.6%).
+
+```{r compute_umap}
+logcounts(datasets[[test_dataset]]) = log1p(cpm(datasets[[test_dataset]]))
+dec = scran::modelGeneVar(datasets[[test_dataset]])
+hvg = scran::getTopHVGs(dec, n=2000)
+umap = compute_umap(logcounts(datasets[[test_dataset]])[hvg,])
+```
+
+```{r plot_class_assignments}
+plot_assignments(class_pred, umap[,2:3], 1)
+```
+
+```{r plot_marker_scores}
+plot_marker_scores(class_enrichment, umap[,2:3], TRUE)
+```
+
+Small group of cells that shows suspicious co-expression of endocrine and non-endocrine markers.
+
+```{r plot_ct_assignments}
+plot_assignments(ct_pred, umap[,2:3], 1)
+ct_true = mutate(ct_pred, predicted = true_label)
+plot_assignments(ct_true, umap[,2:3], 1)
+```
+
+Excellent correspondance, small differences: acinar/ductal, epsilon.
+
+```{r}
+plot_marker_scores(ct_enrichment, umap[,2:3], TRUE)
+```
+
+A potential issue that arises using the naive assignment method is that some marker sets contain higher expressing genes, which may lead to some cell types being overcalled. This is the case for the epsilon cell type for example:
+
+```{r}
+ct_pred %>%
+    filter(true_label == "epsilon" | predicted == "epsilon") %>%
+    arrange(desc(enrichment))
+```
+
+31 cells are called as epsilon, but only 7 cells were annotated as epsilon. However "true" epsilon cells have much higher marker scores and enrichment values, which can help to hand curate cell-level annotations. One way to pick a threshold for scores and enrichment is to look for multimodality in the score and enrichment distributions:
+
+```{r}
+hist(ct_scores["endocrine|epsilon",], breaks = 20)
+hist(ct_enrichment["endocrine|epsilon",])
+```
+
+However, a better alternative is to assess cell type predictions across multiple training datasets to compute the optimal enrichment threshold above which a cell should be annotated as epsilon (1.8), as we will show below.
+
+# Assessment of cell type prediction 
+
+```{r}
+true_labels = datasets[[test_dataset]]$new_label
+keep_cell = datasets[[test_dataset]]$class == "endocrine"
+keep_marker_set = get_group(rownames(ct_enrichment)) == "endocrine"
+pr = summarize_precision_recall(
+    ct_enrichment[keep_marker_set, keep_cell], true_labels[keep_cell], seq(1,3,0.1)
+) %>%
+    filter(get_cell_type(marker_set) == true_label)
+pr %>%
+    ggplot(aes(x = score_threshold, y = f1, col = true_label)) +
+    geom_line() +
+    theme_bw()
+```
+
+We repeat the same assessment using each dataset as the test dataset:
+
+```{r}
+test_class = "endocrine"
+pr = list()
+for (test_dataset in c("baron", "muraro", "seger")) {
+    ct_markers = filter(ct_meta_markers[[test_dataset]], rank<=100)
+    ct_scores = score_cells(log1p(cpm(datasets[[test_dataset]])), ct_markers)
+    ct_enrichment = compute_marker_enrichment(ct_scores, by_group = TRUE)
+    
+    true_labels = datasets[[test_dataset]]$new_label
+    keep_cell = datasets[[test_dataset]]$class == test_class
+    keep_marker_set = get_group(rownames(ct_enrichment)) == test_class
+    pr[[test_dataset]] = summarize_precision_recall(
+        ct_enrichment[keep_marker_set, keep_cell], true_labels[keep_cell], seq(1,3,0.1)
+    ) %>%
+        filter(get_cell_type(marker_set) == true_label)
+}
+pr = bind_rows(pr, .id = "test_dataset")
+```
+
+Now we can compute the average F1 over all test datasets:
+
+```{r}
+mean_pr = pr %>%
+    group_by(true_label, score_threshold) %>%
+    summarize(f1 = mean(f1, na.rm=TRUE))
+mean_pr %>%
+    ggplot(aes(x = score_threshold, y = f1, col = true_label)) +
+    geom_line() +
+    theme_bw()
+```
+
+And extract optimal performance and enrichment thresholds:
+
+```{r}
+mean_pr %>%
+    group_by(true_label) %>%
+    filter(f1 == max(f1, na.rm = TRUE)) %>%
+    summarize(score_threshold = median(score_threshold), f1 = first(f1))
+```
+
+For example, for epsilon cells, the optimal threshold is at 1.8, with an expected performance of F1=0.86.
+
+# Estimation of number of informative markers per cell type
+
+To estimate the number of ideal markers, we can repeat the previous assessment at different gene numbers:
+
+```{r}
+test_class = "endocrine"
+n_genes = c(1, 2, 5, 10, 20, 50, 100, 200, 500, 1000)
+mean_pr = list()
+for (n in n_genes) {
+    pr = list()
+    for (test_dataset in c("baron", "muraro", "seger")) {
+        ct_markers = filter(ct_meta_markers[[test_dataset]], rank<=n)
+        ct_scores = score_cells(log1p(cpm(datasets[[test_dataset]])), ct_markers)
+        ct_enrichment = compute_marker_enrichment(ct_scores, by_group = TRUE)
+
+        true_labels = datasets[[test_dataset]]$new_label
+        keep_cell = datasets[[test_dataset]]$class == test_class
+        keep_marker_set = get_group(rownames(ct_enrichment)) == test_class
+        pr[[test_dataset]] = summarize_precision_recall(
+            ct_enrichment[keep_marker_set, keep_cell], true_labels[keep_cell], seq(1,3,0.1)
+        ) %>%
+            filter(get_cell_type(marker_set) == true_label)
+    }
+    pr = bind_rows(pr, .id = "test_dataset")
+    mean_pr[[as.character(n)]] = pr %>%
+        group_by(true_label, score_threshold) %>%
+        summarize(f1 = mean(f1, na.rm=TRUE)) %>%
+        group_by(true_label) %>%
+        filter(f1 == max(f1, na.rm = TRUE)) %>%
+        summarize(score_threshold = median(score_threshold), f1 = first(f1))
+}
+mean_pr = bind_rows(mean_pr, .id = "n_genes") %>%
+    mutate(n_genes = as.integer(n_genes))
+```
+
+And plot the results:
+
+```{r}
+mean_pr %>%
+    ggplot(aes(x = n_genes, y = f1, col = true_label)) +
+    geom_line() +
+    theme_bw() +
+    scale_x_log10()
+```
+
+The results suggest that:
+ - 50 to 100 markers yield optimal performance for all cell types.
+ - hierarchical annotation works much better for all cell types (F1 > 0.95) except epsilon cells (F1 ~ 0.85).
+ 
+Epsilon cells are mostly misannotated in the Baron dataset because of low quality cells.

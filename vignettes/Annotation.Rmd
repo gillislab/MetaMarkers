@@ -2,7 +2,7 @@
 title: "MetaMarkers: robust marker signatures from single-cell data (annotation vignette)"
 output: rmarkdown::html_vignette
 vignette: >
-  %\VignetteIndexEntry{MetaMarkers: robust marker signatures from single-cell data}
+  %\VignetteIndexEntry{MetaMarkers: robust marker signatures from single-cell data (annotation vignette)}
   %\VignetteEngine{knitr::rmarkdown}
   %\VignetteEncoding{UTF-8}
 ---
@@ -19,24 +19,25 @@ knitr::opts_chunk$set(
 
 ## Introduction
 
-We assume that the reader is familiar with the main MetaMarker vignette, which shows how to select meta-markers from a compendium of pancreas dataset. In this vignette, we will focus on using markers for cell type annotation, which also serves as a benchmark to find highly informative markers.
+We assume that the reader is familiar with the main MetaMarker vignette, which shows how to select meta-markers from a compendium of pancreas dataset. In this vignette, we will focus on using markers for cell type annotation, which is an extremely simple, fast and transparent procedure. In the second part of the vignette, we show how to build a benchmark to identify an optimal number of highly informative markers based on cell type annotation performance.
 
 As in the main vignette, the requirements are:
  - a list of annotated datasets.
  - matching cell type names across datasets.
  - all packages installed in the main vignette.
 
-## Prepare datasets
-
-We load the packages needed for our analysis: MetaMarkers, scRNAseq (package used to access datasets) and dplyr (data manipulation, part of the tidyverse).
+We load the packages needed for our analysis: MetaMarkers, scRNAseq (package used to access datasets), dplyr (data manipulation, part of the tidyverse), and ggplot2 (figures, part of the tidyverse).
 
 ```{r setup, message=FALSE}
-devtools::load_all("..")
+library(MetaMarkers)
 library(scRNAseq)
 library(dplyr)
+library(ggplot2)
 ```
 
-We will perform our annotation task on pancreatic cell types. For simplicity, we only consider 3 datasets here, but the analysis can easily be extended to include even more datasets. We use leave-one-dataset-out cross-validation: we build meta-markers from 2 datasets and predict on the third dataset.
+## Prepare datasets
+
+We will perform our annotation task on pancreatic cell types. For simplicity, we only consider 3 datasets here, but the analysis can easily be extended to include even more datasets.
 
 First, we load the datasets (in the SingleCellExperiment format) and make sure that gene names are identical across datasets. Here, the Baron dataset uses gene symbols, while the Muraro dataset uses names that combine gene symbols and chromosome locations (to avoid duplicate names). We change gene names to gene symbols, which are contained in the "rowData" slot of the Muraro dataset. Note that MetaMarkers will automatically remove duplicate gene names, so we don’t need to worry.
 
@@ -79,34 +80,36 @@ common_labels = Reduce(intersect, list(
 common_labels
 ```
 
-We only keep cell types that are common to both datasets. Note that this step is not strictly necessary: if we kept cell types present in only one dataset, the pipeline would run normally but the "meta-markers" for these cell types would be based on a single dataset.
+For simplicity, we’ll group all the datasets in a named list:
+
+```{r}
+datasets = list(baron = dataset1, muraro = dataset2, seger = dataset3)
+```
+
+Finally, we restrict datasets to common cell types and normalize data. Here we use MetaMarkers’ simple library size normalization procedure, but any normalization procedure may be used:
 
 ```{r susbet_datasets}
-dataset1 = dataset1[, dataset1$new_label %in% common_labels]
-dataset2 = dataset2[, dataset2$new_label %in% common_labels]
-dataset3 = dataset3[, dataset3$new_label %in% common_labels]
-```
-The last step before computing markers is data normalization. The only requirement here is that the normalization is uniform across datasets for the meta-analytic stats to be meaningful. Any normalization procedure may be used, the MetaMarkers package offer a simple library size normalization procedure:
-
-```{r compute_cpm}
-cpm(dataset1) = convert_to_cpm(assay(dataset1))
-cpm(dataset2) = convert_to_cpm(assay(dataset2))
-cpm(dataset3) = convert_to_cpm(assay(dataset3))
+for (dataset in names(datasets)) {
+    keep_cell = datasets[[dataset]]$new_label %in% common_labels
+    datasets[[dataset]] = datasets[[dataset]][, keep_cell]
+    cpm(datasets[[dataset]]) = convert_to_cpm(counts(datasets[[dataset]]))
+}
 ```
 
-# Marker selection
+Note that restricting to common cell types is not necessary: if we kept cell types present in only one dataset, the pipeline would run normally but the "meta-markers" for these cell types would be based on a single dataset.
 
-We proceed to marker selection for each inidividual dataset
+
+## Marker selection
+
+The marker procedure follows the two steps presented in the "MetaMarkers" vignette. First, we select markers for individual datasets:
 
 ```{r compute_markers}
-markers = list(
-     baron = compute_markers(cpm(dataset1), dataset1$new_label),
-     muraro = compute_markers(cpm(dataset2), dataset2$new_label),
-     seger = compute_markers(cpm(dataset3), dataset3$new_label)
-)
+markers = lapply(datasets, function(dataset) {
+    compute_markers(cpm(dataset), dataset$new_label)
+})
 ```
 
-Then build meta-markers from invidual datasets marker lists, leaving one dataset out.
+Second, we build meta-markers by picking replicable markers. Here, we use leave-one-dataset-out cross-validation: we build meta-markers from 2 training datasets and make predictions on the third dataset
 
 ```{r compute_meta_markers}
 meta_markers = lapply(names(markers), function(leave_out) {
@@ -115,88 +118,207 @@ meta_markers = lapply(names(markers), function(leave_out) {
 names(meta_markers) = names(markers)
 ```
 
-# Example of cell type prediction
+Note that the names for the meta-markers list correspond to the dataset that has been *left out*.
 
-As an example, we start by predicting cell types from the Segerstolpe dataset using the top 100 Baron+Muraro meta-markers. First we select the top 100 meta-markers (leaving Segerstolpe out) for each cell type:
+
+## Cell type prediction
+
+As an example, we start by predicting cell types from the Segerstolpe dataset using the top 100 Baron+Muraro meta-markers. The annotation process typically follows three steps: computing marker scores, deduce cell types and plot results.
+
+First we select the top 100 meta-markers (leaving Segerstolpe out) for each cell type. Here we simply select markers based on their rank (based on DE recurrence across datasets, then AUROC).
 
 ```{r extract_top_markers}
-top_markers = filter(meta_markers[["seger"]], rank<=100)
+test_dataset = "seger"
+top_markers = filter(meta_markers[[test_dataset]], rank<=100)
 ```
 
-Then predict cell types in the Segerstolpe dataset:
+To predict and assess cell types in the Segerstolpe dataset, we use the 3 following functions:
 
 ```{r score_seger}
-ct_scores = score_cells(log1p(cpm(dataset3)), top_markers)
-ct_scores[, 1:3]
+ct_scores = score_cells(log1p(cpm(datasets[[test_dataset]])), top_markers)
+ct_enrichment = compute_marker_enrichment(ct_scores)
+ct_pred = assign_cells(ct_scores)
 ```
 
-Each cell in the Segerstople dataset receives a score for each cell types. For example, cell "HP1502401_H13" scores highest for the gamma cell type.
+"score_cells" simply computes the average marker expression for each marker set in each cell:
+
+```{r}
+t(ct_scores[, 1:3])
+```
+Each cell in the Segerstople dataset receives a score for each cell type, corresponding to the average expression of the selected markers. The scores vary from cell to cell and dataset to dataset because of differences in coverage, which is why we recommend also computing marker enrichment, which normalizes marker scores in each cell (by dividing by average marker set expression, which corresponds to enrichment under the null that all sets are expressed equally):
+
+```{r}
+t(ct_enrichment[, 1:3])
+```
+
+Finally, the scores can be used to make simple cell type annotations by assigning cells to the highest marker score (or, equivalently, the highest enrichment):
+
+```{r}
+head(ct_pred, 3)
+```
+
+Results are presented in a table, along with the marker score and enrichment that led to the predictions. We will see how these scores can be used to QC the annotation.
+
+We can compute the accuracy of this simple assignment procedure by comparing to author annotations:
+
+```{r assess_predictions}
+ct_pred = ct_pred %>%
+    mutate(true_label = datasets[[test_dataset]]$new_label)
+mean(ct_pred$predicted == ct_pred$true_label)
+```
+
+The top 100 markers thus provide very robust annotations, with an accuracy of 95.6%. We can further focus on high-quality predictions by only considering cells with high enrichment values:
+
+```{r}
+enrichment_threshold = seq(1,4,0.1)
+accuracy = sapply(enrichment_threshold, function(t) {
+    keep_cell = ct_pred$enrichment > t
+    mean(ct_pred$predicted[keep_cell] == ct_pred$true_label[keep_cell])
+})
+plot(enrichment_threshold, accuracy, type="l")
+```
+
+Next, we can visualize the predictions in UMAP space. If the target dataset does not have a carefully curated UMAP space associated with it (as is the case here), we can use the scran package to select highly variable genes and MetaMarker’s "compute_umap" function to build it:
+
+```{r compute_umap}
+logcounts(datasets[[test_dataset]]) = log1p(cpm(datasets[[test_dataset]]))
+dec = scran::modelGeneVar(datasets[[test_dataset]])
+hvg = scran::getTopHVGs(dec, n=2000)
+umap = compute_umap(logcounts(datasets[[test_dataset]])[hvg,])
+```
+
+We now use the "plot_assignments" function to plot the predictions. Since we have the author annotations, we can plot the predictions and the author annotations side-by-side.
+
+```{r plot_ct_assignments, hold=TRUE}
+plot_assignments(ct_pred, umap[,2:3], 1)
+ct_true = mutate(ct_pred, predicted = true_label)
+plot_assignments(ct_true, umap[,2:3], 1)
+```
+
+As we already know from the accuracy, there is excellent correspondance between predictions and author annotations. There are however some notable mistypings, particularly the acinar/ductal boundary. The reason for these systematic mistypings is usually that some marker set (presumable the ductal marker set) contains higher expressed genes, which will naturally favor annotations towards that cell type with our simple assignment procedure. This is usually not an issue when trying to obtain an overview of which cell types are present or assigning a cell type to a cluster, but becomes problematic when accurate annotations for every individual cell in the dataset.
+
+In the following, we focus on a slightly less obvious but more important example, the boundary around the rare epsilon cells:
+
+```{r}
+ct_pred %>%
+    filter(true_label == "epsilon" | predicted == "epsilon") %>%
+    arrange(desc(enrichment))
+```
+
+11 cells are called as epsilon, but only 7 cells were annotated as epsilon. However "true" epsilon cells have markedly higher marker scores and enrichment values, which can help to hand curate cell-level annotations. One way to pick a threshold for scores and enrichment is to look for multimodality in the score and enrichment distributions:
+
+```{r}
+ct_enrichment = compute_marker_enrichment(ct_scores)
+hist(ct_scores["all|epsilon",], breaks = 20)
+hist(ct_enrichment["all|epsilon",])
+```
+
+However, a better alternative is to assess cell type predictions across multiple training datasets to compute the optimal enrichment threshold above which a cell should be annotated as epsilon (2.2), as we will show below.
+
+
+# Assessment of cell type prediction
 
 To evaluate cell typing performance, we can use the Segerstolpe annotation as a ground truth. We can ask two separate questions:
  - how good are markers at separating populations?
  - how easily can we find a threshold to predict the correct cell type?
-
+ 
 For the first question, we don’t need to predict cell types. Instead, for each cell type, we ask how far apart...
 
 ```{r auroc_seger}
-true_labels = dataset3$new_label
-auroc_seger = summarize_auroc(ct_scores, true_labels)
-fc_seger = summarize_fold_change(ct_scores, true_labels)
-gplots::heatmap.2(auroc_seger)
-gplots::heatmap.2(log2(fc_seger))
+true_labels = datasets[[test_dataset]]$new_label
+auroc = summarize_auroc(ct_enrichment, true_labels)
+fc = summarize_fold_change(ct_enrichment, true_labels)
+gplots::heatmap.2(auroc)
+gplots::heatmap.2(log2(fc))
 ```
 
-For the second question, we need to convert scores to cell type predictions. Here we will simply assign cell to the highest marker score.
-
-```{r predict_seger}
-ct_pred = assign_cells(ct_scores)
-head(ct_pred)
-```
-
-For example, the first cell has been predicted to be a gamma cell, "score" and "quality" are used to quantify the confidence of the prediction. NANAN alpha
+For the second question, we need to convert enrichment scors to cell type predictions. Here we use the following assignment method: for a given cell, if the enrichment is above a given threshold, the cell is assigned to that cell type. With the following function, we can evaluate the annotation performance at various enrichment thresholds, then compare it to the ground truth annotation:
 
 ```{r}
-summarize_precision_recall(predictor = ct_pred == "alpha", is_positive = true_labels == "alpha", threshold=0)
+pr = summarize_precision_recall(ct_enrichment, true_labels, seq(1,5,0.1)) %>%
+    filter(get_cell_type(marker_set) == true_label)
+pr %>%
+    ggplot(aes(x = score_threshold, y = f1, col = true_label)) +
+    geom_line() +
+    theme_bw()
 ```
+
+We repeat the same assessment using each dataset as test dataset:
 
 ```{r}
-f1 = lapply(unique(true_labels), function(cell_type) {
-    result = summarize_precision_recall(predictor = ct_pred == cell_type,
-                                        is_positive = true_labels == cell_type,
-                                        threshold=0)
-    result$value[result$stat == "f1"]
-})
-names(f1) = unique(true_labels)
-f1
+pr = list()
+for (test_dataset in c("baron", "muraro", "seger")) {
+    top_markers = filter(meta_markers[[test_dataset]], rank<=100)    
+    ct_scores = score_cells(log1p(cpm(datasets[[test_dataset]])), top_markers)
+    ct_enrichment = compute_marker_enrichment(ct_scores)
+    
+    true_labels = datasets[[test_dataset]]$new_label
+    pr[[test_dataset]] = summarize_precision_recall(ct_enrichment, true_labels, seq(1,4,0.1)) %>%
+        filter(get_cell_type(marker_set) == true_label)
+}
+pr = bind_rows(pr, .id = "test_dataset")
 ```
-Works extremely well, except acinar and epsilon.
+
+Now we can compute the average F1 over all test datasets:
 
 ```{r}
-data.frame(epsilon_scores = ct_scores["epsilon",], true_label = true_labels) %>%
-    ggplot(aes(x = epsilon_scores, fill = true_label)) +
-    geom_density(alpha=0.4)
-
-ct_scores[,true_labels == "epsilon"] %>%
-    t() %>%
-    as.data.frame() %>%
-    pivot_longer(everything(),"prediction", values_to = "score") %>%
-    ggplot(aes(x = score, fill = prediction)) +
-    geom_density(alpha=0.4)
+mean_pr = pr %>%
+    group_by(true_label, score_threshold) %>%
+    summarize(f1 = mean(f1, na.rm=TRUE))
+mean_pr %>%
+    ggplot(aes(x = score_threshold, y = f1, col = true_label)) +
+    geom_line() +
+    theme_bw()
 ```
+
+And extract optimal performance and enrichment thresholds:
 
 ```{r}
-epsilon_score = ct_scores["epsilon",] / colSums(ct_scores) 
-summary = summarize_precision_recall(
-    predictor = epsilon_score,
-    is_positive = true_labels == "epsilon",
-    threshold=seq(0,0.5,by=0.01)
-)
-summary %>%
-    filter(stat == "f1") %>%
-    ggplot(aes(x = threshold, y=value)) +
-    geom_line()
+mean_pr %>%
+    group_by(true_label) %>%
+    filter(f1 == max(f1, na.rm = TRUE)) %>%
+    summarize(score_threshold = median(score_threshold), f1 = first(f1))
 ```
 
-Optimal F1 0.8, ...
+For example epsilon 2.2.
 
 # Estimation of number of informative markers per cell type
+
+To estimate the number of ideal markers, we can repeat the previous assessment at different gene numbers:
+
+```{r}
+n_genes = c(1, 2, 5, 10, 20, 50, 100, 200, 500, 1000)
+mean_pr = list()
+for (n in n_genes) {
+    pr = list()
+    for (test_dataset in c("baron", "muraro", "seger")) {
+        true_labels = datasets[[test_dataset]]$new_label
+        top_markers = filter(meta_markers[[test_dataset]], rank<=n)
+        
+        ct_scores = score_cells(log1p(cpm(datasets[[test_dataset]])), top_markers)
+        ct_enrichment = compute_marker_enrichment(ct_scores)
+        
+        pr[[test_dataset]] = summarize_precision_recall(ct_enrichment, true_labels, seq(1,5,0.1)) %>%
+            filter(get_cell_type(marker_set) == true_label)
+    }
+    pr = bind_rows(pr, .id = "test_dataset")
+    mean_pr[[as.character(n)]] = pr %>%
+        group_by(true_label, score_threshold) %>%
+        summarize(f1 = mean(f1, na.rm=TRUE)) %>%
+        group_by(true_label) %>%
+        filter(f1 == max(f1, na.rm = TRUE)) %>%
+        summarize(score_threshold = median(score_threshold), f1 = first(f1))
+}
+mean_pr = bind_rows(mean_pr, .id = "n_genes") %>%
+    mutate(n_genes = as.integer(n_genes))
+```
+
+And plot the results:
+
+```{r}
+mean_pr %>%
+    ggplot(aes(x = n_genes, y = f1, col = true_label)) +
+    geom_line() +
+    theme_bw() +
+    scale_x_log10()
+```
