@@ -85,8 +85,10 @@ plot_assignments = function(assignments, umap_coordinates, enrichment_threshold 
     colnames(umap_coordinates) = c("umap_1", "umap_2")
     to_plot = assignments %>%
         dplyr::bind_cols(umap_coordinates) %>%
+        dplyr::mutate(predicted = as.character(.data$predicted)) %>%
         dplyr::mutate(predicted = ifelse(.data$enrichment < enrichment_threshold, NA, .data$predicted)) %>%
         dplyr::mutate(predicted = ifelse(.data$predicted == "unassigned", NA, .data$predicted))
+        dplyr::mutate(predicted = factor(.data$predicted))
     
     result = ggplot2::ggplot(to_plot, ggplot2::aes(x = .data$umap_1, y = .data$umap_2, col = .data$predicted))
     if (rasterize_umap) {
