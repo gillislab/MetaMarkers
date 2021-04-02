@@ -147,7 +147,7 @@ All class assignments are relatively clear, we’ll proceed with predictions at 
 ```{r score_cell_types}
 top_markers = filter(ct_meta_markers[[test_dataset]], rank<=100)
 ct_scores = score_cells(log1p(cpm(datasets[[test_dataset]])), top_markers)
-head(ct_scores)
+ct_scores[1:6, 1:4]
 ```
 
 Note that scores encode group info, e.g. "endocrine|alpha".

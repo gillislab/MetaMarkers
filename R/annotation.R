@@ -36,6 +36,7 @@ marker_list_to_matrix = function(marker_list, known_genes, weighted=TRUE) {
     marker_list %>%
         tibble::enframe("cell_type", "gene") %>%
         tidyr::unnest(c("gene")) %>%
+        dplyr::mutate(group = "all") %>%
         marker_table_to_matrix(known_genes, weighted)
 }
 
