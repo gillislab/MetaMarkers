@@ -25,6 +25,12 @@ compute_markers = function(expression, cell_type_labels,
                            group_labels = rep("all", length(cell_type_labels)),
                            two_tailed = FALSE, tie_correction = FALSE,
                            genes_are_rows=TRUE) {
+    cell_type_labels = as.character(cell_type_labels)
+    if (any(cell_type_labels == "")) {
+        stop("All cells must have a label, please remove cells without labels ",
+             "or consider renaming (e.g., unknown).")
+    }
+    
     result = lapply(purrr::set_names(unique(group_labels)), function(group) {
         keep_cell = group_labels == group
         if (genes_are_rows) {
