@@ -15,7 +15,7 @@
 #' as rows (as in SingleCellExperiment or Seurat objects)?
 #'
 #' @return A tibble containing basic differential expression statistics for
-#' all cell types and genes. All statistics are 1-vs-rest within groups. Note
+#' all cell types and genes. All statistics are 1-vs-rest within groups. NOTE:
 #' genes with duplicate names will be removed.
 #'
 #' @export
@@ -26,6 +26,7 @@ compute_markers = function(expression, cell_type_labels,
                            two_tailed = FALSE, tie_correction = FALSE,
                            genes_are_rows=TRUE) {
     cell_type_labels = as.character(cell_type_labels)
+    group_labels = as.character(group_labels)
     if (any(cell_type_labels == "")) {
         stop("All cells must have a label, please remove cells without labels ",
              "or consider renaming (e.g., unknown).")
