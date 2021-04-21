@@ -34,7 +34,7 @@ as rows (as in SingleCellExperiment or Seurat objects)?}
 }
 \value{
 A tibble containing basic differential expression statistics for
-all cell types and genes. All statistics are 1-vs-rest within groups. Note
+all cell types and genes. All statistics are 1-vs-rest within groups. NOTE:
 genes with duplicate names will be removed.
 }
 \description{

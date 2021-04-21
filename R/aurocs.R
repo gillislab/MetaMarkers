@@ -64,11 +64,10 @@ compute_aurocs = function(predictors, label_matrix, compute_tie_correction = FAL
 # faster than solution using base::tapply, probably data.table would be faster
 rank_sparse = function(M) {
     nnz = diff(M@p)
-    ranks = tibble::tibble(x = M@x, j = rep.int(1:ncol(M), nnz)) %>%
-        dplyr::group_by(.data$j) %>%
-        dplyr::mutate(rank =
-            c(matrixStats::colRanks(as.matrix(.data$x), ties.method = "average"))
-        )
+    # declare variables for compatibility with R CMD check
+    x = j = NULL
+    data_ = data.table::data.table(x = M@x, j = rep.int(1:ncol(M), nnz))
+    ranks = data_[, list(rank = c(matrixStats::colRanks(as.matrix(x), ties.method = "average"))), by=j]
     R = M
     R@x = ranks$rank + rep.int((nrow(M)-nnz-1)/2, nnz)
     return(R)
